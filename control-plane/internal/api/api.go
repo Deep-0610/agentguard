@@ -58,15 +58,19 @@ func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 	if req.CollectedAt.IsZero(){req.CollectedAt=time.Now().UTC()}
 	if req.CollectedAt.After(time.Now().Add(5*time.Minute)){writeError(w,422,"validation_error","collected_at cannot be more than five minutes in the future");return}
 	if len(req.Assets)>10000||len(req.Findings)>20000{writeError(w,413,"limit_exceeded","A scan may contain at most 10,000 assets and 20,000 findings");return}
+	var assessedFindings []store.FindingInput
 	for i:=range req.Assets{
 		a:=&req.Assets[i]
-		if strings.TrimSpace(a.Name)==""||len(a.Name)>512||len(a.Source)>64||len(a.ExternalID)>512{writeError(w,422,"validation_error","Every asset requires a name; source, name and external ID must be within documented limits");return}
+		if strings.TrimSpace(a.Name)==""||len(a.Name)>512||strings.TrimSpace(a.Source)==""||len(a.Source)>64||len(a.ExternalID)>512{writeError(w,422,"validation_error","Every asset requires a name and source; values must be within documented limits");return}
 		if a.Kind==""{a.Kind="unknown"}
 		if !oneOf(a.Kind,"agent","mcp_server","oauth_app","service_principal","api_token","service_account","workload_identity","bot","unknown"){writeError(w,422,"validation_error","Unsupported identity kind");return}
 		if a.OwnerStatus==""{a.OwnerStatus="UNKNOWN"}
 		if !oneOf(a.OwnerStatus,"ACTIVE","SUSPENDED","UNKNOWN"){writeError(w,422,"validation_error","Unsupported owner status");return}
-		if a.RiskScore<0||a.RiskScore>100||len(a.Scopes)>256{writeError(w,422,"validation_error","Risk score must be 0-100 and scopes are limited to 256");return}
+		if a.SecretAgeDays<0||len(a.Scopes)>256{writeError(w,422,"validation_error","Secret age cannot be negative and scopes are limited to 256");return}
+		a.RiskScore,generated:=assessAsset(*a)
+		assessedFindings=append(assessedFindings,generated...)
 	}
+	req.Findings=append(req.Findings,assessedFindings...)
 	for i:=range req.Findings{
 		f:=&req.Findings[i]
 		if strings.TrimSpace(f.Title)==""||len(f.Title)>512||!oneOf(f.Severity,"critical","high","medium","low","info"){writeError(w,422,"validation_error","Every finding requires a title and a valid severity");return}
