@@ -58,6 +58,14 @@ type FindingInput struct {
 	Evidence string `json:"evidence,omitempty"`
 	Remediation string `json:"remediation,omitempty"`
 }
+type RelationshipInput struct {
+	FromSource string `json:"from_source"`
+	FromExternalID string `json:"from_external_id"`
+	ToSource string `json:"to_source"`
+	ToExternalID string `json:"to_external_id"`
+	Type string `json:"type"`
+	Evidence string `json:"evidence,omitempty"`
+}
 type ScanRequest struct {
 	ScanID string `json:"scan_id"`
 	Source string `json:"source"`
@@ -65,6 +73,7 @@ type ScanRequest struct {
 	CollectedAt time.Time `json:"collected_at"`
 	Assets []AssetInput `json:"assets,omitempty"`
 	Findings []FindingInput `json:"findings,omitempty"`
+	Relationships []RelationshipInput `json:"relationships,omitempty"`
 }
 type IngestResult struct {
 	ScanID string `json:"scan_id"`
