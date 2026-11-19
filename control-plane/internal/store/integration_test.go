@@ -29,7 +29,7 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	updated.ScanID="integration-drift-"+suffix
 	updated.Assets=[]AssetInput{{ExternalID:"mcp:test",Source:"mcp",Kind:"mcp_server",Name:"test-server",OwnerStatus:"ACTIVE",Scopes:[]string{"read"}}}
 	if _,err=s.Ingest(ctx,principalA,updated,"payload-drift-"+suffix);err!=nil{t.Fatal(err)}
-	identityEvents,err:=s.ListIdentityEvents(ctx,tenantA,func()string{items,e:=s.ListIdentities(ctx,tenantA,10);if e!=nil||len(items)==0{return ""};return items[0]["id"].(string)}(),10)
+	identityRows,err:=s.ListIdentities(ctx,tenantA,10);if err!=nil{t.Fatal(err)};if len(identityRows)==0{t.Fatal("expected identities after ingestion")};identityID,ok:=identityRows[0]["id"].(string);if !ok||identityID==""{t.Fatalf("invalid identity row: %#v",identityRows[0])};identityEvents,err:=s.ListIdentityEvents(ctx,tenantA,identityID,10)
 	if err!=nil{t.Fatal(err)}
 	if len(identityEvents)==0{t.Fatal("expected identity drift history after owner state changed")}
 	audit,err:=s.VerifyAuditChain(ctx,tenantA);if err!=nil{t.Fatal(err)}
