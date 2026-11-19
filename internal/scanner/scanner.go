@@ -22,6 +22,7 @@ var secretPatterns = []struct {
 	{"Private key", regexp.MustCompile(`-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----`), "critical"},
 	{"Generic credential assignment", regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\s*[:=]\s*["']?[^\s"'{}]{8,}`), "high"},
 }
+var sensitiveEnvName = regexp.MustCompile(`(?i)(?:secret|token|password|api[_-]?key|private[_-]?key)`)
 
 func Analyze(servers []model.Server) []model.Finding {
 	var findings []model.Finding
@@ -39,16 +40,17 @@ func inspectServer(s model.Server) []model.Finding {
 	var out []model.Finding
 	resource := s.Name + " (" + s.Config + ")"
 	for key, value := range s.Env {
+		if value == "" { continue }
+		matched := false
 		for _, pattern := range secretPatterns {
 			if pattern.re.MatchString(value) {
-				out = append(out, model.Finding{
-					ID: id("secret", s.Name, key), Severity: pattern.severity, Category: "secret-exposure",
-					Title: pattern.name + " in MCP environment", Description: "A value matching a known credential pattern is stored in MCP configuration.",
-					Resource: resource, Location: "env." + key, Evidence: redact(value), Remediation: "Move credentials to an OS-backed secret store or managed secret provider; rotate exposed credentials.",
-					Score: severityScore(pattern.severity), Tags: []string{"secret", "credential"},
-				})
+				out = append(out, secretFinding(s, resource, key, pattern.name, pattern.severity, value))
+				matched = true
 				break
 			}
+		}
+		if !matched && sensitiveEnvName.MatchString(key) {
+			out = append(out, secretFinding(s, resource, key, "Potential secret in sensitive environment variable", "high", value))
 		}
 	}
 	if s.Command != "" && isShell(s.Command) {
@@ -79,8 +81,17 @@ func inspectServer(s model.Server) []model.Finding {
 	return out
 }
 
+func secretFinding(s model.Server, resource, key, title, severity, value string) model.Finding {
+	return model.Finding{
+		ID: id("secret", s.Name, key), Severity: severity, Category: "secret-exposure",
+		Title: title + " in MCP environment", Description: "A value matching a credential heuristic or stored under a sensitive environment variable name.",
+		Resource: resource, Location: "env." + key, Evidence: redact(value),
+		Remediation: "Move credentials to an OS-backed secret store or managed secret provider; rotate exposed credentials.",
+		Score: severityScore(severity), Tags: []string{"secret", "credential"},
+	}
+}
+
 func schemaHash(tools []map[string]any) string {
-	// Stable map-key ordering is provided by encoding/json.
 	data, _ := jsonMarshal(tools)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])

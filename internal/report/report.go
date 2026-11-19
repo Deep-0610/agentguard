@@ -68,7 +68,6 @@ func renderHTML(r model.Result) ([]byte, error) {
 func renderSARIF(r model.Result) ([]byte, error) {
 	type location struct { URI string `json:"uri"` }
 	type physical struct { ArtifactLocation location `json:"artifactLocation"` }
-	type region struct { Message message `json:"message"` }
 	type message struct { Text string `json:"text"` }
 	type sarifLocation struct { PhysicalLocation physical `json:"physicalLocation"` }
 	type resultItem struct {
