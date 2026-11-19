@@ -113,9 +113,10 @@ func inspectServer(s model.Server) []model.Finding {
 			}
 			for key, values := range parsed.Query() {
 				if sensitiveEnvName.MatchString(key) {
-					for _, value := range values {
+					for valueIndex, value := range values {
 						if value != "" {
-							out = append(out, secretFinding(s, resource, "url.query."+key, "url.query."+key, "Credential in URL query", "high", value))
+							location := fmt.Sprintf("url.query.%s[%d]", key, valueIndex)
+							out = append(out, secretFinding(s, resource, location, location, "Credential in URL query", "high", value))
 						}
 					}
 				}
