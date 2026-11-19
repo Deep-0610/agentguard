@@ -72,7 +72,7 @@ func TestHTMLReportEscapesUntrustedLabels(t *testing.T) {
 func TestRenderSanitizesCallerSuppliedFindingData(t *testing.T) {
 	secret := "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
 	finding := model.Finding{
-		ID: "opaque-id",
+		ID: secret,
 		Category: "secret-exposure",
 		Severity: "critical",
 		Title: "credential " + secret,
