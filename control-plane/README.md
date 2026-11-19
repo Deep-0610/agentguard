@@ -9,7 +9,9 @@ This service is the first commercial control-plane slice: tenant-scoped scan ing
 - High-entropy API keys are shown once and stored as HMAC-SHA256 digests using a deployment pepper.
 - Roles: owner, admin, analyst, viewer, ingest. API routes use explicit role allowlists.
 - Bounded, strict-JSON scan ingestion with tenant-scoped idempotency.
-- Identity first-seen/last-seen tracking and risk-ranked inventory.
+- Identity first-seen/last-seen tracking, drift history, credential-age metadata, and risk-ranked inventory.
+- Server-side risk rules for privileged identities without active owners, toxic permission combinations, unverified OAuth applications, and stale API tokens.
+- OPA/Rego policy evaluation for tenant-scoped inventory reads and MCP tool invocation decisions; unknown actions and schema drift are denied by default.
 - Finding status changes create finding-history and audit events.
 - Audit events are hash-chained per tenant; database triggers reject UPDATE and DELETE.
 - Health endpoints, security headers, request IDs, and graceful shutdown.
@@ -40,6 +42,9 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
 | Method | Route | Roles | Purpose |
 |---|---|---|---|
 | POST | /v1/ingest/scans | owner, admin, ingest | Ingest a scan snapshot |
+| POST | /v1/policies/evaluate | owner, admin, analyst | Evaluate a policy through OPA; unavailable policy service fails closed |
+| GET | /v1/identities/{id}/events | owner, admin, analyst, viewer | Identity drift timeline |
+| GET | /v1/audit-events/verify | owner, admin | Verify tenant audit hash chain |
 | GET | /v1/dashboard/summary | owner, admin, analyst, viewer | Tenant KPI summary |
 | GET | /v1/identities | owner, admin, analyst, viewer | Risk-ranked identity inventory |
 | GET | /v1/findings | owner, admin, analyst, viewer | Findings with optional status filter |
