@@ -96,14 +96,14 @@ func inspectServer(s model.Server) []model.Finding {
 			}
 			if parsed.User != nil {
 				if password, ok := parsed.User.Password(); ok && password != "" {
-					out = append(out, secretFinding(s, resource, "url.userinfo", "Credential embedded in remote URL", "critical", password))
+					out = append(out, secretFinding(s, resource, "url.userinfo", "url.userinfo", "Credential embedded in remote URL", "critical", password))
 				}
 			}
 			for key, values := range parsed.Query() {
 				if sensitiveEnvName.MatchString(key) {
 					for _, value := range values {
 						if value != "" {
-							out = append(out, secretFinding(s, resource, "url.query."+key, "Credential in URL query", "high", value))
+							out = append(out, secretFinding(s, resource, "url.query."+key, "url.query."+key, "Credential in URL query", "high", value))
 						}
 					}
 				}
