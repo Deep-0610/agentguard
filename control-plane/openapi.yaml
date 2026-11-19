@@ -199,6 +199,38 @@ paths:
           description: Key revoked
         "404":
           description: Key not found in this tenant
+  /v1/tool-baselines:
+    get:
+      summary: List tenant-approved tool schema baselines
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Tenant-scoped approved tool baselines
+  /v1/tool-baselines/{name}:
+    put:
+      summary: Create or update a tenant-approved tool schema baseline
+      description: Owner/admin only. Risk classification and approved schema hash are stored server-side; policy evaluation never trusts caller-supplied baseline values.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approved_schema_hash, risk]
+              properties:
+                approved_schema_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                risk: { type: string, enum: [low, medium, high, critical] }
+      responses:
+        "200":
+          description: Baseline saved and audit event recorded
+        "422":
+          description: Invalid schema hash or risk classification
   /v1/policies/evaluate:
     post:
       summary: Evaluate a tenant-bound policy decision through OPA
@@ -220,13 +252,7 @@ paths:
                   type: object
                   properties:
                     name: { type: string, maxLength: 256 }
-                    risk: { type: string, enum: [low, medium, high, critical] }
-                    schema_hash: { type: string }
-                    approved_schema_hash: { type: string }
-                approval:
-                  type: object
-                  properties:
-                    required: { type: boolean }
+                    schema_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
       responses:
         "200":
           description: Policy decision
