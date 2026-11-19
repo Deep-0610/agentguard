@@ -101,3 +101,12 @@ func TestRequestIDIsBounded(t *testing.T) {
 	handler.ServeHTTP(rr,req)
 	if got:=rr.Header().Get("X-Request-ID");len(got)>64 { t.Fatalf("request ID was not bounded: length=%d",len(got)) }
 }
+
+func TestRedactUntrustedRemovesBearerAndJWT(t *testing.T) {
+	bearer := "Bearer abcdefghijklmnopqrstuvwxyz0123456789"
+	jwt := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signaturepayload1234567890"
+	got := redactUntrusted("Authorization: " + bearer + " session=" + jwt)
+	if strings.Contains(got, "abcdefghijklmnopqrstuvwxyz0123456789") || strings.Contains(got, jwt) {
+		t.Fatalf("bearer or JWT credential survived redaction: %q", got)
+	}
+}
