@@ -6,7 +6,7 @@ var secretValuePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`AKIA[0-9A-Z]{16}`),
 	regexp.MustCompile(`AIza[0-9A-Za-z_-]{35}`),
 	regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/-]{20,}=?`),
-	regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\b`),
+	regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b`),
 	regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{30,}`),
 	regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{20,}`),
 	regexp.MustCompile(`-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----`),
