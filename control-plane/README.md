@@ -6,7 +6,7 @@ This service is the first commercial control-plane slice: tenant-scoped scan ing
 
 - PostgreSQL-backed organizations, API keys, scan snapshots, identities, findings, finding history, and audit events.
 - Tenant identity is derived only from a validated API key; client-supplied tenant IDs are not trusted.
-- High-entropy API keys are shown once and stored as HMAC-SHA256 digests using a deployment pepper.
+- High-entropy API keys are shown once and stored as HMAC-SHA256 digests using a deployment pepper.\n- TOTP MFA is available per privileged API key; seeds are AES-GCM encrypted at rest, codes are replay-protected, and five failed attempts trigger a 15-minute lockout. API-key revocation requires a fresh TOTP code.
 - Roles: owner, admin, analyst, viewer, ingest. API routes use explicit role allowlists.
 - Bounded, strict-JSON scan ingestion with tenant-scoped idempotency.
 - Identity first-seen/last-seen tracking, drift history, credential-age metadata, risk-ranked inventory, and tenant-scoped identity relationships.
@@ -34,7 +34,7 @@ export AG_OPA_URL=http://localhost:8181
 go run ./cmd/controlplane serve
 ```
 
-The bootstrap command creates a tenant and initial owner key. Duplicate organization slugs are rejected. Never commit .env.
+The bootstrap command creates a tenant and initial owner key. Duplicate organization slugs are rejected. Never commit .env. After bootstrap, enroll TOTP on the owner key using `POST /v1/mfa/totp/enroll`, add the returned secret to an authenticator app, and confirm it with `POST /v1/mfa/totp/verify`. A key must have MFA enabled before it can revoke another key. Send the current six-digit code in `X-AgentGuard-TOTP` when calling `DELETE /v1/api-keys/{id}`.
 
 ## API
 
@@ -56,7 +56,7 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
 | GET | /v1/audit-events | owner, admin, analyst | Tenant audit history |
 | GET | /v1/api-keys | owner, admin | List key metadata; never secrets |
 | POST | /v1/api-keys | owner, admin | Create a scoped key; secret shown once |
-| DELETE | /v1/api-keys/{id} | owner, admin | Revoke an API key |
+| GET | /v1/mfa/status | owner, admin | Check TOTP enrollment for the calling key |\n| POST | /v1/mfa/totp/enroll | owner, admin | Start TOTP enrollment; secret shown once |\n| POST | /v1/mfa/totp/verify | owner, admin | Verify and enable TOTP |\n| DELETE | /v1/api-keys/{id} | owner, admin + TOTP | Revoke an API key with step-up authentication |
 
 ### Example scan payload
 
@@ -109,7 +109,7 @@ A repeated scan ID with identical payload returns an idempotent duplicate result
 - Deploy behind HTTPS; do not expose plaintext HTTP publicly.
 - Use a unique random API-key pepper and database password per deployment. Losing the pepper invalidates all API keys.
 - Restrict PostgreSQL network access and use TLS for external database connections.
-- API keys are an initial service/bootstrap mechanism, not a substitute for OIDC SSO, user sessions, MFA, or SCIM.
+- API keys are an initial service/bootstrap mechanism, not a substitute for OIDC SSO, user sessions, per-user MFA, or SCIM. TOTP step-up currently protects API-key revocation only.
 - Audit hash chaining is tamper-evident, not cryptographic non-repudiation. A database superuser can alter data and recompute hashes; external immutable checkpoint anchoring is required for stronger assurance.
 - Provider connectors, OIDC user federation, MFA/SCIM, runtime gateway enforcement, approval orchestration, automated credential revocation, and a browser dashboard are not implemented. OPA policy evaluation is implemented as an explicit API operation; it does not enforce tool calls at runtime.
 - Do not ingest raw credentials, access tokens, environment values, or customer secrets. Submit redacted evidence only.
