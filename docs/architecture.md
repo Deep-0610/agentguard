@@ -22,17 +22,18 @@ Scanner/provider ingestion → Go HTTP API → API-key authentication and tenant
 The PostgreSQL model currently includes organizations, API keys, scan snapshots, NHI inventory, identity relationships, identity drift history, findings, finding workflow events, and hash-chained audit events.
 
 The control plane currently supports:
-- Tenant-scoped API keys with owner/admin/analyst/viewer/ingest roles, one-time secret display, expiry, and revocation.
+- Tenant-scoped API keys with owner/admin/analyst/viewer/ingest roles, one-time secret display, expiry, and revocation. Privileged keys can enroll TOTP; API-key revocation requires a fresh, replay-protected code, with encrypted seeds and temporary lockout after repeated failures.
 - Idempotent scan ingestion, risk-ranked identity inventory, identity relationships, and drift timelines.
 - Server-side risk heuristics for orphaned privileged identities, toxic permission combinations, unverified OAuth apps, and stale API tokens.
 - Finding triage with a recorded reason and append-only audit event.
 - Per-tenant hash-chained audit records and an audit-chain verification endpoint.
 - OPA/Rego policy evaluation through an internal service; decisions are audited and OPA failures return an error rather than an allow.
+- Tenant-owned approved tool schema baselines and risk classifications; policy evaluation derives them from PostgreSQL instead of trusting client-supplied approved hashes, risk labels, or approval flags.
 
 ## Remaining platform roadmap
 
 - **Identity connectors:** GitHub, Okta, Microsoft Entra ID, and Google Workspace with read-only scopes, incremental sync, webhook ingestion, provider ownership attribution, and credential lifecycle context.
-- **Enterprise user access:** OIDC SSO, MFA/step-up authentication, SCIM provisioning, user-level RBAC, and tenant administration.
+- **Enterprise user access:** OIDC SSO, user identities, SCIM provisioning, user-level RBAC, and IdP-enforced MFA. Current TOTP step-up is attached to privileged API keys and only gates key revocation; it is not user federation.
 - **Policy lifecycle:** signed/versioned Rego bundles, policy simulation, approvals, exceptions, policy assignment, and decision receipts.
 - **Runtime gateway:** MCP protocol proxy, OAuth 2.1 audience validation, per-tool policy enforcement, schema drift blocking, and human approval for sensitive actions.
 - **Operations:** shared rate limiting, external audit checkpoint anchoring, KMS-backed encryption, observability, backups/restore drills, incident response, signed releases, SBOM/provenance, and independent penetration testing.
