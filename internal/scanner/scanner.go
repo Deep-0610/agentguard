@@ -22,7 +22,7 @@ var secretPatterns = []struct {
 	{"GitHub token", regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{30,}`), "critical"},
 	{"Slack token", regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{20,}`), "high"},
 	{"Private key", regexp.MustCompile(`-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----`), "critical"},
-	{"Generic credential assignment", regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\s*[:=]\s*["']?[^\s"'{}]{8,}`), "high"},
+	{"Generic credential assignment", regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|token|client[_-]?secret|password)\s*[:=]\s*["']?[^\s"'{}]{8,}`), "high"},
 }
 
 var sensitiveEnvName = regexp.MustCompile(`(?i)(?:secret|token|password|api[_-]?key|private[_-]?key|credential|auth)`)
@@ -48,7 +48,7 @@ func Analyze(servers []model.Server) []model.Finding {
 
 func inspectServer(s model.Server) []model.Finding {
 	var out []model.Finding
-	resource := s.Name + " (" + s.Config + ")"
+	resource := safeResource(s)
 
 	for key, value := range s.Env {
 		if value == "" {
@@ -77,6 +77,16 @@ func inspectServer(s model.Server) []model.Finding {
 
 	for i, arg := range s.Args {
 		location := fmt.Sprintf("args[%d]", i)
+		if strings.HasPrefix(arg, "-") {
+			flag, inline, hasInline := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+			if sensitiveEnvName.MatchString(flag) {
+				if hasInline && inline != "" {
+					out = append(out, secretFinding(s, resource, location, flag, "Credential in command-line flag", "high", inline))
+				} else if i+1 < len(s.Args) && !strings.HasPrefix(s.Args[i+1], "-") {
+					out = append(out, secretFinding(s, resource, fmt.Sprintf("args[%d]", i+1), flag, "Credential in command-line flag", "high", s.Args[i+1]))
+				}
+			}
+		}
 		if finding, ok := inspectSecret(s, resource, location, location, arg); ok {
 			out = append(out, finding)
 		}
@@ -95,8 +105,10 @@ func inspectServer(s model.Server) []model.Finding {
 				})
 			}
 			if parsed.User != nil {
-				if password, ok := parsed.User.Password(); ok && password != "" {
-					out = append(out, secretFinding(s, resource, "url.userinfo", "url.userinfo", "Credential embedded in remote URL", "critical", password))
+				username := parsed.User.Username()
+				password, hasPassword := parsed.User.Password()
+				if username != "" || (hasPassword && password != "") {
+					out = append(out, secretFinding(s, resource, "url.userinfo", "url.userinfo", "Credential embedded in remote URL", "critical", username+":"+password))
 				}
 			}
 			for key, values := range parsed.Query() {
@@ -108,10 +120,24 @@ func inspectServer(s model.Server) []model.Finding {
 					}
 				}
 			}
+			if parsed.Fragment != "" {
+				if finding, ok := inspectSecret(s, resource, "url.fragment", "url.fragment", parsed.Fragment); ok {
+					out = append(out, finding)
+				}
+			}
 		}
 	}
 
 	if len(s.Tools) > 0 {
+		for i, tool := range s.Tools {
+			data, err := jsonMarshal(tool)
+			if err == nil {
+				location := fmt.Sprintf("tools[%d]", i)
+				if finding, ok := inspectSecret(s, resource, location, location, string(data)); ok {
+					out = append(out, finding)
+				}
+			}
+		}
 		hash := schemaHash(s.Tools)
 		out = append(out, model.Finding{
 			ID: id("fingerprint", s.Config, s.Name, hash), Severity: "info", Category: "schema-fingerprint",
@@ -171,11 +197,33 @@ func id(parts ...string) string {
 }
 
 func redact(value string) string {
-	runes := []rune(value)
-	if len(runes) <= 8 {
+	if value == "" {
+		return ""
+	}
+	return "[REDACTED]"
+}
+
+var secretAssignment = regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|token|client[_-]?secret|password)\s*[:=]\s*[^\s,;]+`)
+
+func SafeLabel(value string) string {
+	if value == "" {
+		return ""
+	}
+	for _, pattern := range secretPatterns {
+		if pattern.re.MatchString(value) {
+			return "[REDACTED]"
+		}
+	}
+	if secretAssignment.MatchString(value) {
 		return "[REDACTED]"
 	}
-	return fmt.Sprintf("%s…%s [REDACTED]", string(runes[:3]), string(runes[len(runes)-3:]))
+	return value
+}
+
+func safeResource(s model.Server) string {
+	name := SafeLabel(s.Name)
+	config := SafeLabel(filepath.Base(s.Config))
+	return name + " (" + config + ")"
 }
 
 func severityScore(severity string) int {
