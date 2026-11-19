@@ -52,9 +52,17 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	backupKey,backupSecret,err:=s.CreateAPIKey(ctx,principalA,"Backup owner","owner",nil);if err!=nil{t.Fatal(err)}
 	var originalKeyID string
 	if err=s.db.QueryRowContext(ctx,`SELECT id::text FROM api_keys WHERE tenant_id=$1 AND key_id=$2`,tenantA,principalA.KeyID).Scan(&originalKeyID);err!=nil{t.Fatal(err)}
-	if err=s.RevokeAPIKey(ctx,principalA,originalKeyID);err!=nil{t.Fatal(err)}
+	secretA,err:=s.BeginTOTPEnrollment(ctx,principalA);if err!=nil{t.Fatal(err)}
+	codeA,stepA,err:=totpAt(secretA,time.Now());if err!=nil{t.Fatal(err)}
+	if err=s.ConfirmTOTP(ctx,principalA,codeA);err!=nil{t.Fatal(err)}
+	nextCodeA,_,err:=totpAt(secretA,time.Unix((stepA+1)*30+1,0));if err!=nil{t.Fatal(err)}
+	if err=s.RevokeAPIKey(ctx,principalA,originalKeyID,nextCodeA);err!=nil{t.Fatal(err)}
 	backupPrincipal,err:=s.Authenticate(ctx,backupSecret);if err!=nil{t.Fatal(err)}
-	if err=s.RevokeAPIKey(ctx,backupPrincipal,backupKey.ID);err==nil{t.Fatal("expected last active owner key revocation to be blocked")}
+	secretB,err:=s.BeginTOTPEnrollment(ctx,backupPrincipal);if err!=nil{t.Fatal(err)}
+	codeB,stepB,err:=totpAt(secretB,time.Now());if err!=nil{t.Fatal(err)}
+	if err=s.ConfirmTOTP(ctx,backupPrincipal,codeB);err!=nil{t.Fatal(err)}
+	nextCodeB,_,err:=totpAt(secretB,time.Unix((stepB+1)*30+1,0));if err!=nil{t.Fatal(err)}
+	if err=s.RevokeAPIKey(ctx,backupPrincipal,backupKey.ID,nextCodeB);err==nil{t.Fatal("expected last active owner key revocation to be blocked")}
 	if _,err=s.Authenticate(ctx,keyA);err==nil{t.Fatal("revoked API key must no longer authenticate")}
 	hash:="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	if _,err=s.SetToolBaseline(ctx,backupPrincipal,"internal.search",hash,"low");err!=nil{t.Fatal(err)}
@@ -66,7 +74,7 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	_ = secondPrincipal
 	var ownerWG sync.WaitGroup
 	revokeResults:=make(chan error,2)
-	for _,id:=range []string{backupKey.ID,secondOwner.ID}{ownerWG.Add(1);go func(target string){defer ownerWG.Done();revokeResults<-s.RevokeAPIKey(ctx,backupPrincipal,target)}(id)}
+	for _,id:=range []string{backupKey.ID,secondOwner.ID}{ownerWG.Add(1);go func(target string){defer ownerWG.Done();revokeResults<-s.RevokeAPIKey(ctx,backupPrincipal,target,nextCodeB)}(id)}
 	ownerWG.Wait();close(revokeResults)
 	successes:=0
 	for revokeErr:=range revokeResults{if revokeErr==nil{successes++}}
