@@ -31,6 +31,8 @@ func (a *API) Handler()http.Handler{
 	mux.HandleFunc("GET /readyz",a.ready)
 	mux.Handle("POST /v1/ingest/scans",a.auth(http.HandlerFunc(a.ingest),"owner","admin","ingest"))
 	mux.Handle("POST /v1/policies/evaluate",a.auth(http.HandlerFunc(a.evaluatePolicy),"owner","admin","analyst"))
+	mux.Handle("GET /v1/tool-baselines",a.auth(http.HandlerFunc(a.listToolBaselines),"owner","admin","analyst","viewer"))
+	mux.Handle("PUT /v1/tool-baselines/{name}",a.auth(http.HandlerFunc(a.setToolBaseline),"owner","admin"))
 	mux.Handle("GET /v1/dashboard/summary",a.auth(http.HandlerFunc(a.summary),"owner","admin","analyst","viewer"))
 	mux.Handle("GET /v1/identities",a.auth(http.HandlerFunc(a.identities),"owner","admin","analyst","viewer"))
 	mux.Handle("GET /v1/relationships",a.auth(http.HandlerFunc(a.relationships),"owner","admin","analyst","viewer"))
@@ -104,28 +106,46 @@ func (a *API) evaluatePolicy(w http.ResponseWriter,r *http.Request){
 		ResourceID string `json:"resource_id"`
 		Tool struct{
 			Name string `json:"name"`
-			Risk string `json:"risk"`
 			SchemaHash string `json:"schema_hash"`
-			ApprovedSchemaHash string `json:"approved_schema_hash"`
 		} `json:"tool"`
-		Approval struct{Required bool `json:"required"`} `json:"approval"`
 	}
 	if _,err:=readJSON(w,r,&body,32<<10);err!=nil{writeError(w,400,"invalid_request",err.Error());return}
 	if !oneOf(body.Action,"inventory.read","tool.invoke"){writeError(w,422,"validation_error","Unsupported policy action");return}
 	if len(body.ResourceType)>80||len(body.ResourceID)>256||len(body.Tool.Name)>256{writeError(w,422,"validation_error","Policy resource or tool fields exceed limits");return}
-	if body.Action=="tool.invoke"&&!oneOf(body.Tool.Risk,"low","medium","high","critical"){writeError(w,422,"validation_error","Tool risk must be low, medium, high, or critical");return}
 	p:=principal(r)
+	risk:="";approvedSchemaHash:="";approvalRequired:=false
+	if body.Action=="tool.invoke"{
+		if strings.TrimSpace(body.Tool.Name)==""||!schemaHashPattern.MatchString(body.Tool.SchemaHash){writeError(w,422,"validation_error","Tool name and lowercase SHA-256 schema_hash are required");return}
+		baseline,err:=a.store.GetToolBaseline(r.Context(),p.TenantID,body.Tool.Name)
+		if errors.Is(err,store.ErrNotFound){risk="critical"}else if err!=nil{writeError(w,500,"baseline_lookup_failed","Unable to load approved tool baseline");return}else{risk=baseline.Risk;approvedSchemaHash=baseline.ApprovedSchemaHash}
+		approvalRequired=risk=="medium"||risk=="high"||risk=="critical"
+	}
 	input:=map[string]any{
 		"action":body.Action,
 		"actor":map[string]any{"tenant_id":p.TenantID,"id":p.KeyID,"role":p.Role},
 		"resource":map[string]any{"tenant_id":p.TenantID,"type":body.ResourceType,"id":body.ResourceID},
-		"tool":map[string]any{"name":body.Tool.Name,"risk":body.Tool.Risk,"schema_hash":body.Tool.SchemaHash,"approved_schema_hash":body.Tool.ApprovedSchemaHash},
-		"approval":map[string]any{"required":body.Approval.Required},
+		"tool":map[string]any{"name":body.Tool.Name,"risk":risk,"schema_hash":body.Tool.SchemaHash,"approved_schema_hash":approvedSchemaHash},
+		"approval":map[string]any{"required":approvalRequired},
 	}
 	decision,err:=a.evaluator.Evaluate(r.Context(),input)
 	if err!=nil{writeError(w,503,"policy_unavailable","Policy evaluation unavailable; request was not authorized");return}
 	if err=a.store.RecordPolicyDecision(r.Context(),p,body.Action,decision.Effect,decision.RuleID,decision.Reason);err!=nil{writeError(w,500,"audit_failed","Policy decision could not be durably audited");return}
 	writeJSON(w,200,decision)
+}
+func (a *API) listToolBaselines(w http.ResponseWriter,r *http.Request){
+	items,err:=a.store.ListToolBaselines(r.Context(),principal(r).TenantID,queryLimit(r,100,500))
+	if err!=nil{writeError(w,500,"query_failed","Unable to load approved tool baselines");return}
+	writeJSON(w,200,map[string]any{"items":items})
+}
+func (a *API) setToolBaseline(w http.ResponseWriter,r *http.Request){
+	var body struct{
+		ApprovedSchemaHash string `json:"approved_schema_hash"`
+		Risk string `json:"risk"`
+	}
+	if _,err:=readJSON(w,r,&body,16<<10);err!=nil{writeError(w,400,"invalid_request",err.Error());return}
+	baseline,err:=a.store.SetToolBaseline(r.Context(),principal(r),r.PathValue("name"),body.ApprovedSchemaHash,body.Risk)
+	if err!=nil{writeError(w,422,"validation_error",err.Error());return}
+	writeJSON(w,200,map[string]any{"baseline":baseline})
 }
 func (a *API) summary(w http.ResponseWriter,r *http.Request){v,err:=a.store.Summary(r.Context(),principal(r).TenantID);if err!=nil{writeError(w,500,"query_failed","Unable to load dashboard summary");return};writeJSON(w,200,v)}
 func (a *API) identities(w http.ResponseWriter,r *http.Request){limit:=queryLimit(r,100,500);v,err:=a.store.ListIdentities(r.Context(),principal(r).TenantID,limit);if err!=nil{writeError(w,500,"query_failed","Unable to load identity inventory");return};writeJSON(w,200,map[string]any{"items":v,"limit":limit})}
@@ -191,7 +211,7 @@ func writeError(w http.ResponseWriter,status int,code,message string){writeJSON(
 func queryLimit(r *http.Request,def,max int)int{v:=r.URL.Query().Get("limit");if v==""{return def};n,err:=strconv.Atoi(v);if err!=nil||n<1{return def};if n>max{return max};return n}
 func oneOf(v string,values ...string)bool{for _,x:=range values{if v==x{return true}};return false}
 func requestID(next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
-	id:=r.Header.Get("X-Request-ID");if id==""||strings.Trim(id,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")!=""{id=fmt.Sprintf("%d",time.Now().UnixNano())}
+	id:=r.Header.Get("X-Request-ID");if len(id)>64||id==""||strings.Trim(id,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")!=""{id=fmt.Sprintf("%d",time.Now().UnixNano())}
 	w.Header().Set("X-Request-ID",id);next.ServeHTTP(w,r.WithContext(context.WithValue(r.Context(),requestIDKey{},id)))
 })}
 func requestIDFrom(r *http.Request)string{v,_:=r.Context().Value(requestIDKey{}).(string);return v}
