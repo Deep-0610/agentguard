@@ -11,8 +11,8 @@ import (
 func TestRenderFormatsDoNotExposeConfigurationSecrets(t *testing.T) {
 	secret := "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
 	server := model.Server{
-		Name: "demo",
-		Config: "mcp.json",
+		Name: secret,
+		Config: "/tmp/" + secret + "/mcp.json",
 		Command: "node",
 		Args: []string{"--token", "password=supersecretvalue"},
 		URL: "https://example.test/mcp?api_key=privatecredentialvalue",
