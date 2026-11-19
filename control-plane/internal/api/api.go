@@ -53,6 +53,7 @@ func (a *API) auth(next http.Handler,roles ...string)http.Handler{
 		if !strings.HasPrefix(header,"Bearer ")||len(header)>256{writeError(w,401,"unauthorized","A valid bearer API key is required");return}
 		p,err:=a.store.Authenticate(r.Context(),strings.TrimSpace(strings.TrimPrefix(header,"Bearer ")))
 		if err!=nil{writeError(w,401,"unauthorized","Invalid or expired API key");return}
+		p.RequestID=requestIDFrom(r)
 		if !allowed[p.Role]{writeError(w,403,"forbidden","This API key does not have permission for this operation");return}
 		next.ServeHTTP(w,r.WithContext(context.WithValue(r.Context(),principalKey{},p)))
 	})
@@ -116,6 +117,7 @@ func (a *API) evaluatePolicy(w http.ResponseWriter,r *http.Request){
 	risk:="";approvedSchemaHash:="";approvalRequired:=false
 	if body.Action=="tool.invoke"{
 		if strings.TrimSpace(body.Tool.Name)==""||!validSchemaHash(body.Tool.SchemaHash){writeError(w,422,"validation_error","Tool name and lowercase SHA-256 schema_hash are required");return}
+		body.Tool.Name=redactUntrusted(body.Tool.Name)
 		baseline,err:=a.store.GetToolBaseline(r.Context(),p.TenantID,body.Tool.Name)
 		if errors.Is(err,store.ErrNotFound){risk="critical"}else if err!=nil{writeError(w,500,"baseline_lookup_failed","Unable to load approved tool baseline");return}else{risk=baseline.Risk;approvedSchemaHash=baseline.ApprovedSchemaHash}
 		approvalRequired=risk=="medium"||risk=="high"||risk=="critical"
@@ -143,7 +145,8 @@ func (a *API) setToolBaseline(w http.ResponseWriter,r *http.Request){
 		Risk string `json:"risk"`
 	}
 	if _,err:=readJSON(w,r,&body,16<<10);err!=nil{writeError(w,400,"invalid_request",err.Error());return}
-	baseline,err:=a.store.SetToolBaseline(r.Context(),principal(r),r.PathValue("name"),body.ApprovedSchemaHash,body.Risk)
+	toolName:=redactUntrusted(r.PathValue("name"))
+	baseline,err:=a.store.SetToolBaseline(r.Context(),principal(r),toolName,body.ApprovedSchemaHash,body.Risk)
 	if err!=nil{writeError(w,422,"validation_error",err.Error());return}
 	writeJSON(w,200,map[string]any{"baseline":baseline})
 }
@@ -158,6 +161,7 @@ func (a *API) findings(w http.ResponseWriter,r *http.Request){limit:=queryLimit(
 func (a *API) updateFinding(w http.ResponseWriter,r *http.Request){
 	var body struct{Status string `json:"status"`;Reason string `json:"reason"`}
 	if _,err:=readJSON(w,r,&body,16<<10);err!=nil{writeError(w,400,"invalid_request",err.Error());return}
+	body.Reason=redactUntrusted(body.Reason)
 	if len(body.Reason)>1000{writeError(w,422,"validation_error","Reason is too long");return}
 	err:=a.store.SetFindingStatus(r.Context(),principal(r),r.PathValue("id"),body.Status,body.Reason)
 	if errors.Is(err,store.ErrNotFound){writeError(w,404,"not_found","Finding not found");return}
