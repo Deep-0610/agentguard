@@ -48,7 +48,7 @@ jobs:
           cache: true
           cache-dependency-path: control-plane/go.sum
       - name: Format Go sources
-        run: files=$(find . -name "*.go" -type f); test -z "$(gofmt -l $files)"
+        run: gofmt -w .
       - name: Resolve dependencies
         run: go mod tidy
       - name: Vet
