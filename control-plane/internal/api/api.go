@@ -33,6 +33,7 @@ func (a *API) Handler()http.Handler{
 	mux.Handle("POST /v1/policies/evaluate",a.auth(http.HandlerFunc(a.evaluatePolicy),"owner","admin","analyst"))
 	mux.Handle("GET /v1/dashboard/summary",a.auth(http.HandlerFunc(a.summary),"owner","admin","analyst","viewer"))
 	mux.Handle("GET /v1/identities",a.auth(http.HandlerFunc(a.identities),"owner","admin","analyst","viewer"))
+	mux.Handle("GET /v1/relationships",a.auth(http.HandlerFunc(a.relationships),"owner","admin","analyst","viewer"))
 	mux.Handle("GET /v1/findings",a.auth(http.HandlerFunc(a.findings),"owner","admin","analyst","viewer"))
 	mux.Handle("PATCH /v1/findings/{id}/status",a.auth(http.HandlerFunc(a.updateFinding),"owner","admin","analyst"))
 	mux.Handle("GET /v1/audit-events",a.auth(http.HandlerFunc(a.audit),"owner","admin","analyst"))
@@ -62,7 +63,7 @@ func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 	if strings.TrimSpace(req.ScanID)==""||len(req.ScanID)>128||strings.TrimSpace(req.Source)==""||len(req.Source)>64{writeError(w,422,"validation_error","scan_id and source are required and must be within documented limits");return}
 	if req.CollectedAt.IsZero(){req.CollectedAt=time.Now().UTC()}
 	if req.CollectedAt.After(time.Now().Add(5*time.Minute)){writeError(w,422,"validation_error","collected_at cannot be more than five minutes in the future");return}
-	if len(req.Assets)>10000||len(req.Findings)>20000{writeError(w,413,"limit_exceeded","A scan may contain at most 10,000 assets and 20,000 findings");return}
+	if len(req.Assets)>10000||len(req.Findings)>20000||len(req.Relationships)>20000{writeError(w,413,"limit_exceeded","A scan may contain at most 10,000 assets, 20,000 findings and 20,000 relationships");return}
 	var assessedFindings []store.FindingInput
 	for i:=range req.Assets{
 		a:=&req.Assets[i]
@@ -79,6 +80,8 @@ func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 		assessedFindings=append(assessedFindings,generated...)
 	}
 	req.Findings=append(req.Findings,assessedFindings...)
+	if len(req.Findings)>20000{writeError(w,413,"limit_exceeded","Generated risk findings exceed the 20,000 finding limit");return}
+	for i:=range req.Relationships{rel:=&req.Relationships[i];if rel.FromSource==""||rel.ToSource==""||rel.FromExternalID==""||rel.ToExternalID==""||len(rel.FromExternalID)>512||len(rel.ToExternalID)>512||len(rel.Evidence)>1024||!oneOf(rel.Type,"uses","accesses","delegates_to","created_by","connected_to","owns"){writeError(w,422,"validation_error","Relationship endpoints, type or evidence are invalid");return};rel.Evidence=redactUntrusted(rel.Evidence)}
 	for i:=range req.Findings{
 		f:=&req.Findings[i]
 		if strings.TrimSpace(f.Title)==""||len(f.Title)>512||!oneOf(f.Severity,"critical","high","medium","low","info"){writeError(w,422,"validation_error","Every finding requires a title and a valid severity");return}
@@ -125,6 +128,11 @@ func (a *API) evaluatePolicy(w http.ResponseWriter,r *http.Request){
 }
 func (a *API) summary(w http.ResponseWriter,r *http.Request){v,err:=a.store.Summary(r.Context(),principal(r).TenantID);if err!=nil{writeError(w,500,"query_failed","Unable to load dashboard summary");return};writeJSON(w,200,v)}
 func (a *API) identities(w http.ResponseWriter,r *http.Request){limit:=queryLimit(r,100,500);v,err:=a.store.ListIdentities(r.Context(),principal(r).TenantID,limit);if err!=nil{writeError(w,500,"query_failed","Unable to load identity inventory");return};writeJSON(w,200,map[string]any{"items":v,"limit":limit})}
+func (a *API) relationships(w http.ResponseWriter,r *http.Request){
+	items,err:=a.store.ListRelationships(r.Context(),principal(r).TenantID,queryLimit(r,200,1000))
+	if err!=nil{writeError(w,500,"query_failed","Unable to load identity graph");return}
+	writeJSON(w,200,map[string]any{"items":items})
+}
 func (a *API) findings(w http.ResponseWriter,r *http.Request){limit:=queryLimit(r,100,500);status:=r.URL.Query().Get("status");if status!=""&&!oneOf(status,"open","acknowledged","accepted-risk","remediated","false-positive"){writeError(w,400,"invalid_filter","Unsupported finding status");return};v,err:=a.store.ListFindings(r.Context(),principal(r).TenantID,status,limit);if err!=nil{writeError(w,500,"query_failed","Unable to load findings");return};writeJSON(w,200,map[string]any{"items":v,"limit":limit})}
 func (a *API) updateFinding(w http.ResponseWriter,r *http.Request){
 	var body struct{Status string `json:"status"`;Reason string `json:"reason"`}
