@@ -33,6 +33,8 @@ func (a *API) Handler()http.Handler{
 	mux.Handle("GET /v1/findings",a.auth(http.HandlerFunc(a.findings),"owner","admin","analyst","viewer"))
 	mux.Handle("PATCH /v1/findings/{id}/status",a.auth(http.HandlerFunc(a.updateFinding),"owner","admin","analyst"))
 	mux.Handle("GET /v1/audit-events",a.auth(http.HandlerFunc(a.audit),"owner","admin","analyst"))
+	mux.Handle("GET /v1/audit-events/verify",a.auth(http.HandlerFunc(a.verifyAudit),"owner","admin"))
+	mux.Handle("GET /v1/identities/{id}/events",a.auth(http.HandlerFunc(a.identityEvents),"owner","admin","analyst","viewer"))
 	mux.Handle("GET /v1/api-keys",a.auth(http.HandlerFunc(a.listKeys),"owner","admin"))
 	mux.Handle("POST /v1/api-keys",a.auth(http.HandlerFunc(a.createKey),"owner","admin"))
 	mux.Handle("DELETE /v1/api-keys/{id}",a.auth(http.HandlerFunc(a.revokeKey),"owner","admin"))
@@ -98,6 +100,16 @@ func (a *API) updateFinding(w http.ResponseWriter,r *http.Request){
 	writeJSON(w,200,map[string]any{"status":"updated"})
 }
 func (a *API) audit(w http.ResponseWriter,r *http.Request){v,err:=a.store.ListAudit(r.Context(),principal(r).TenantID,queryLimit(r,100,500));if err!=nil{writeError(w,500,"query_failed","Unable to load audit events");return};writeJSON(w,200,map[string]any{"items":v})}
+func (a *API) verifyAudit(w http.ResponseWriter,r *http.Request){
+	result,err:=a.store.VerifyAuditChain(r.Context(),principal(r).TenantID)
+	if err!=nil{writeError(w,500,"verification_failed","Unable to verify audit chain");return}
+	writeJSON(w,200,result)
+}
+func (a *API) identityEvents(w http.ResponseWriter,r *http.Request){
+	items,err:=a.store.ListIdentityEvents(r.Context(),principal(r).TenantID,r.PathValue("id"),queryLimit(r,100,500))
+	if err!=nil{writeError(w,500,"query_failed","Unable to load identity history");return}
+	writeJSON(w,200,map[string]any{"items":items})
+}
 func (a *API) listKeys(w http.ResponseWriter,r *http.Request){v,err:=a.store.ListAPIKeys(r.Context(),principal(r).TenantID);if err!=nil{writeError(w,500,"query_failed","Unable to load API keys");return};writeJSON(w,200,map[string]any{"items":v})}
 func (a *API) createKey(w http.ResponseWriter,r *http.Request){
 	var body struct{Name string `json:"name"`;Role string `json:"role"`}
