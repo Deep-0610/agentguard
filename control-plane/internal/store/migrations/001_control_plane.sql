@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS findings (
  suppression_expires_at TIMESTAMPTZ,
  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
- UNIQUE (tenant_id, fingerprint)
+ UNIQUE (tenant_id, fingerprint),
+ UNIQUE (tenant_id, id)
 );
 CREATE INDEX IF NOT EXISTS findings_tenant_status_idx ON findings(tenant_id, status, severity);
 CREATE INDEX IF NOT EXISTS findings_tenant_seen_idx ON findings(tenant_id, last_seen_at DESC);
