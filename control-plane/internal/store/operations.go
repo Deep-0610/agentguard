@@ -45,7 +45,7 @@ func (s *Store) Ingest(ctx context.Context,p Principal,req ScanRequest,payloadHa
 		external:=strings.TrimSpace(a.ExternalID);if external==""{external=a.Kind+":"+a.Name}
 		if len(external)>512{return IngestResult{},fmt.Errorf("asset external_id exceeds 512 characters")}
 		if a.Kind==""{a.Kind="unknown"};if a.OwnerStatus==""{a.OwnerStatus="UNKNOWN"};if a.Environment==""{a.Environment="unknown"}
-		meta,marshalErr:=json.Marshal(a.Metadata);if marshalErr!=nil{return IngestResult{},marshalErr};if len(meta)>16384{return IngestResult{},fmt.Errorf("asset metadata exceeds 16KB")}
+		meta:=[]byte("{}")
 		_,err=tx.ExecContext(ctx,`INSERT INTO identities(tenant_id,external_key,source,kind,name,owner_email,owner_status,environment,scopes,risk_score,last_scan_id,metadata) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12::jsonb) ON CONFLICT(tenant_id,external_key) DO UPDATE SET source=EXCLUDED.source,kind=EXCLUDED.kind,name=EXCLUDED.name,owner_email=COALESCE(EXCLUDED.owner_email,identities.owner_email),owner_status=EXCLUDED.owner_status,environment=EXCLUDED.environment,scopes=EXCLUDED.scopes,risk_score=EXCLUDED.risk_score,last_seen_at=now(),last_scan_id=EXCLUDED.last_scan_id,metadata=EXCLUDED.metadata,updated_at=now()`,p.TenantID,a.Source+":"+external,a.Source,a.Kind,a.Name,a.OwnerEmail,a.OwnerStatus,a.Environment,a.Scopes,a.RiskScore,scanID,string(meta))
 		if err!=nil{return IngestResult{},err};result.AssetsUpserted++
 	}
