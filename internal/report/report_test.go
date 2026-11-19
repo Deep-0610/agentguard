@@ -63,7 +63,8 @@ func TestSARIFDefinesRulesReferencedByResults(t *testing.T) {
 
 func TestHTMLReportEscapesUntrustedLabels(t *testing.T) {
 	server:=model.Server{Name:`<script>alert("x")</script>`,Config:"mcp.json"}
-	output,err:=Render("html",[]model.Server{server},nil)
+	findings:=[]model.Finding{{Severity:"low",Resource:server.Name,Title:"Test finding"}}
+	output,err:=Render("html",[]model.Server{server},findings)
 	if err!=nil { t.Fatal(err) }
 	if strings.Contains(string(output),`<script>alert`) { t.Fatal("untrusted label was emitted as executable HTML") }
 }
