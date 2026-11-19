@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -15,7 +16,11 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	if len(pepper)<32 { t.Fatal("test API key pepper must be at least 32 characters") }
 	ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second);defer cancel()
 	s,err:=Open(ctx,dsn,pepper);if err!=nil{t.Fatal(err)};defer s.Close()
-	if err=s.Migrate(ctx);err!=nil{t.Fatal(err)}
+	var migrationWG sync.WaitGroup
+	migrationErrors:=make(chan error,2)
+	for i:=0;i<2;i++{migrationWG.Add(1);go func(){defer migrationWG.Done();migrationErrors<-s.Migrate(ctx)}()}
+	migrationWG.Wait();close(migrationErrors)
+	for migrationErr:=range migrationErrors{if migrationErr!=nil{t.Fatalf("concurrent migration failed: %v",migrationErr)}}
 	suffix:=fmt.Sprintf("%d",time.Now().UnixNano())
 	tenantA,keyA,err:=s.Bootstrap(ctx,"Tenant A "+suffix);if err!=nil{t.Fatal(err)}
 	tenantB,keyB,err:=s.Bootstrap(ctx,"Tenant B "+suffix);if err!=nil{t.Fatal(err)}
@@ -56,5 +61,18 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	baseline,err:=s.GetToolBaseline(ctx,tenantA,"internal.search");if err!=nil{t.Fatal(err)}
 	if baseline.ApprovedSchemaHash!=hash||baseline.Risk!="low"{t.Fatalf("unexpected tool baseline: %+v",baseline)}
 	if _,err=s.GetToolBaseline(ctx,tenantB,"internal.search");err!=ErrNotFound{t.Fatalf("tenant B must not see tenant A baseline: %v",err)}
+	secondOwner,secondSecret,err:=s.CreateAPIKey(ctx,backupPrincipal,"Concurrent owner","owner",nil);if err!=nil{t.Fatal(err)}
+	secondPrincipal,err:=s.Authenticate(ctx,secondSecret);if err!=nil{t.Fatal(err)}
+	_ = secondPrincipal
+	var ownerWG sync.WaitGroup
+	revokeResults:=make(chan error,2)
+	for _,id:=range []string{backupKey.ID,secondOwner.ID}{ownerWG.Add(1);go func(target string){defer ownerWG.Done();revokeResults<-s.RevokeAPIKey(ctx,backupPrincipal,target)}(id)}
+	ownerWG.Wait();close(revokeResults)
+	successes:=0
+	for revokeErr:=range revokeResults{if revokeErr==nil{successes++}}
+	if successes!=1{t.Fatalf("expected exactly one concurrent owner-key revocation to succeed, got %d",successes)}
+	var activeOwners int
+	if err=s.db.QueryRowContext(ctx,`SELECT count(*) FROM api_keys WHERE tenant_id=$1 AND role='owner' AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now())`,tenantA).Scan(&activeOwners);err!=nil{t.Fatal(err)}
+	if activeOwners!=1{t.Fatalf("expected exactly one active owner key after concurrent revocation, got %d",activeOwners)}
 	audit,err=s.VerifyAuditChain(ctx,tenantA);if err!=nil||!audit.Valid{t.Fatalf("audit chain invalid after tool baseline update: %+v %v",audit,err)}
 }
