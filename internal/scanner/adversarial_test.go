@@ -76,3 +76,19 @@ func FuzzAnalyzeSensitiveEnvironmentValues(f *testing.F) {
 		}
 	})
 }
+
+func TestRepeatedURLCredentialsHaveUniqueFindingIDs(t *testing.T) {
+	secretA := "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+	secretB := "ghp_0123456789abcdefghijklmnopqrstuvwxyz"
+	findings := Analyze([]model.Server{{Name:"demo",Config:"mcp.json",URL:"https://example.test/mcp?token="+secretA+"&token="+secretB}})
+	seen := map[string]bool{}
+	count := 0
+	for _, finding := range findings {
+		if strings.HasPrefix(finding.Location, "url.query.token[") {
+			count++
+			if seen[finding.ID] { t.Fatalf("duplicate finding ID %q", finding.ID) }
+			seen[finding.ID] = true
+		}
+	}
+	if count != 2 { t.Fatalf("expected two distinct URL credential findings, got %d", count) }
+}
