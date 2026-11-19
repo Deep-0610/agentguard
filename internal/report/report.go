@@ -5,16 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"path/filepath"
 	"strings"
 
 	"github.com/Deep-0610/agentguard/internal/model"
+	"github.com/Deep-0610/agentguard/internal/scanner"
 )
 
 func Render(format string, servers []model.Server, findings []model.Finding) ([]byte, error) {
-	result := model.Result{Version: "0.1.0", Servers: safeServers(servers), Findings: findings}
+	safe := safeFindings(findings)
+	result := model.Result{Version: "0.1.0", Servers: safeServers(servers), Findings: safe}
 	result.Summary.Servers = len(servers)
 	result.Summary.Findings = len(findings)
-	for _, f := range findings {
+	for _, f := range safe {
 		switch f.Severity {
 		case "critical": result.Summary.Critical++
 		case "high": result.Summary.High++
@@ -36,13 +39,41 @@ func Render(format string, servers []model.Server, findings []model.Finding) ([]
 	}
 }
 
+func safeFindings(in []model.Finding) []model.Finding {
+	out := make([]model.Finding, len(in))
+	for i, finding := range in {
+		out[i] = finding
+		out[i].Tags = append([]string(nil), finding.Tags...)
+		out[i].ID = scanner.SafeLabel(finding.ID)
+		out[i].Severity = scanner.SafeLabel(finding.Severity)
+		out[i].Category = scanner.SafeLabel(finding.Category)
+		out[i].Title = scanner.SafeLabel(finding.Title)
+		out[i].Description = scanner.SafeLabel(finding.Description)
+		out[i].Resource = scanner.SafeLabel(finding.Resource)
+		out[i].Location = scanner.SafeLabel(finding.Location)
+		out[i].Remediation = scanner.SafeLabel(finding.Remediation)
+		if finding.Category == "secret-exposure" && finding.Evidence != "" {
+			out[i].Evidence = "[REDACTED]"
+		} else {
+			out[i].Evidence = scanner.SafeLabel(finding.Evidence)
+		}
+		for j, tag := range finding.Tags {
+			out[i].Tags[j] = scanner.SafeLabel(tag)
+		}
+	}
+	return out
+}
+
 func safeServers(in []model.Server) []model.Server {
 	out := make([]model.Server, len(in))
 	for i, s := range in {
 		out[i] = s
+		out[i].Name = scanner.SafeLabel(s.Name)
+		out[i].Config = scanner.SafeLabel(filepath.Base(s.Config))
 		out[i].Command = ""
 		out[i].Args = nil
 		out[i].URL = ""
+		out[i].Transport = ""
 		out[i].Env = nil
 		out[i].Tools = nil
 		out[i].Metadata = nil
@@ -71,27 +102,67 @@ func renderHTML(r model.Result) ([]byte, error) {
 }
 
 func renderSARIF(r model.Result) ([]byte, error) {
-	type location struct { URI string `json:"uri"` }
-	type physical struct { ArtifactLocation location `json:"artifactLocation"` }
-	type message struct { Text string `json:"text"` }
-	type sarifLocation struct { PhysicalLocation physical `json:"physicalLocation"` }
+	type message struct {
+		Text string `json:"text"`
+	}
+	type configuration struct {
+		Level string `json:"level"`
+	}
+	type rule struct {
+		ID string `json:"id"`
+		ShortDescription message `json:"shortDescription"`
+		FullDescription message `json:"fullDescription"`
+		Help message `json:"help"`
+		DefaultConfiguration configuration `json:"defaultConfiguration"`
+	}
 	type resultItem struct {
 		RuleID string `json:"ruleId"`
 		Level string `json:"level"`
 		Message message `json:"message"`
-		Locations []sarifLocation `json:"locations,omitempty"`
 	}
-	type driver struct { Name string `json:"name"`; Rules []map[string]any `json:"rules"` }
-	type run struct { Tool struct { Driver driver `json:"driver"` } `json:"tool"`; Results []resultItem `json:"results"` }
-	doc := struct { Version string `json:"version"`; Schema string `json:"$schema"`; Runs []run `json:"runs"` }{
-		Version: "2.1.0", Schema: "https://json.schemastore.org/sarif-2.1.0.json",
+	type driver struct {
+		Name string `json:"name"`
+		Rules []rule `json:"rules"`
+	}
+	type run struct {
+		Tool struct {
+			Driver driver `json:"driver"`
+		} `json:"tool"`
+		Results []resultItem `json:"results"`
+	}
+	doc := struct {
+		Version string `json:"version"`
+		Schema string `json:"$schema"`
+		Runs []run `json:"runs"`
+	}{
+		Version: "2.1.0",
+		Schema: "https://json.schemastore.org/sarif-2.1.0.json",
 	}
 	var current run
 	current.Tool.Driver.Name = "AgentGuard"
+	seen := make(map[string]bool)
 	for _, f := range r.Findings {
 		level := "note"
-		if f.Severity == "critical" || f.Severity == "high" { level = "error" } else if f.Severity == "medium" { level = "warning" }
-		current.Results = append(current.Results, resultItem{RuleID:f.Category, Level:level, Message:message{Text:f.Title + ": " + f.Description}})
+		if f.Severity == "critical" || f.Severity == "high" {
+			level = "error"
+		} else if f.Severity == "medium" {
+			level = "warning"
+		}
+		if !seen[f.Category] {
+			seen[f.Category] = true
+			current.Tool.Driver.Rules = append(current.Tool.Driver.Rules, rule{
+				ID: f.Category,
+				ShortDescription: message{Text: f.Title},
+				FullDescription: message{Text: f.Description},
+				Help: message{Text: f.Remediation},
+				DefaultConfiguration: configuration{Level: level},
+			})
+		}
+		current.Results = append(current.Results, resultItem{
+			RuleID: f.Category,
+			Level: level,
+			Message: message{Text: f.Title + ": " + f.Description},
+		})
 	}
 	doc.Runs = []run{current}
 	return json.MarshalIndent(doc, "", "  ")

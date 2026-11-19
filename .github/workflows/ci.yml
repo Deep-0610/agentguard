@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "hardening/**"]
+    branches: [main, "hardening/**", "security/**"]
   pull_request:
 
 permissions:
@@ -14,21 +14,36 @@ concurrency:
 
 jobs:
   quality:
-    name: Go quality and tests
+    name: Go security and quality gates
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ["1.26.x", "1.27.x"]
+    timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/checkout@v7
         with:
-          go-version: "1.22.x"
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go-version }}
           cache: true
       - name: Format Go sources
         run: gofmt -w .
       - name: Vet
         run: go vet ./...
-      - name: Test with race detector
-        run: go test -race -coverprofile=coverage.out ./...
+      - name: Unit and race tests
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - name: Fuzz redaction
+        run: go test ./internal/scanner -run=^$ -fuzz=FuzzRedactNeverRetainsNonEmptyInput -fuzztime=10s -parallel=2
+      - name: Fuzz sensitive environment analysis
+        run: go test ./internal/scanner -run=^$ -fuzz=FuzzAnalyzeSensitiveEnvironmentValues -fuzztime=10s -parallel=2
+      - name: Fuzz JSON validation
+        run: go test ./internal/discovery -run=^$ -fuzz=FuzzValidateJSON -fuzztime=10s -parallel=2
       - name: Build
         run: go build ./...
+      - name: Vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...

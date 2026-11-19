@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/Deep-0610/agentguard/internal/model"
 )
@@ -22,10 +23,11 @@ var secretPatterns = []struct {
 	{"GitHub token", regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{30,}`), "critical"},
 	{"Slack token", regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{20,}`), "high"},
 	{"Private key", regexp.MustCompile(`-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----`), "critical"},
-	{"Generic credential assignment", regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\s*[:=]\s*["']?[^\s"'{}]{8,}`), "high"},
+	{"Generic credential assignment", regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|token|client[_-]?secret|password)\s*["']?\s*[:=]\s*["']?[^\s"'{}]{8,}`), "high"},
 }
 
 var sensitiveEnvName = regexp.MustCompile(`(?i)(?:secret|token|password|api[_-]?key|private[_-]?key|credential|auth)`)
+var ansiEscape = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))`)
 var shellNames = map[string]bool{
 	"sh": true, "bash": true, "zsh": true, "dash": true, "ash": true,
 	"fish": true, "ksh": true, "csh": true, "tcsh": true,
@@ -48,7 +50,7 @@ func Analyze(servers []model.Server) []model.Finding {
 
 func inspectServer(s model.Server) []model.Finding {
 	var out []model.Finding
-	resource := s.Name + " (" + s.Config + ")"
+	resource := safeResource(s)
 
 	for key, value := range s.Env {
 		if value == "" {
@@ -77,6 +79,16 @@ func inspectServer(s model.Server) []model.Finding {
 
 	for i, arg := range s.Args {
 		location := fmt.Sprintf("args[%d]", i)
+		if strings.HasPrefix(arg, "-") {
+			flag, inline, hasInline := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+			if sensitiveEnvName.MatchString(flag) {
+				if hasInline && inline != "" {
+					out = append(out, secretFinding(s, resource, location, flag, "Credential in command-line flag", "high", inline))
+				} else if i+1 < len(s.Args) && !strings.HasPrefix(s.Args[i+1], "-") {
+					out = append(out, secretFinding(s, resource, fmt.Sprintf("args[%d]", i+1), flag, "Credential in command-line flag", "high", s.Args[i+1]))
+				}
+			}
+		}
 		if finding, ok := inspectSecret(s, resource, location, location, arg); ok {
 			out = append(out, finding)
 		}
@@ -95,23 +107,40 @@ func inspectServer(s model.Server) []model.Finding {
 				})
 			}
 			if parsed.User != nil {
-				if password, ok := parsed.User.Password(); ok && password != "" {
-					out = append(out, secretFinding(s, resource, "url.userinfo", "url.userinfo", "Credential embedded in remote URL", "critical", password))
+				username := parsed.User.Username()
+				password, hasPassword := parsed.User.Password()
+				if username != "" || (hasPassword && password != "") {
+					out = append(out, secretFinding(s, resource, "url.userinfo", "url.userinfo", "Credential embedded in remote URL", "critical", username+":"+password))
 				}
 			}
 			for key, values := range parsed.Query() {
 				if sensitiveEnvName.MatchString(key) {
-					for _, value := range values {
+					for valueIndex, value := range values {
 						if value != "" {
-							out = append(out, secretFinding(s, resource, "url.query."+key, "url.query."+key, "Credential in URL query", "high", value))
+							location := fmt.Sprintf("url.query.%s[%d]", key, valueIndex)
+							out = append(out, secretFinding(s, resource, location, location, "Credential in URL query", "high", value))
 						}
 					}
+				}
+			}
+			if parsed.Fragment != "" {
+				if finding, ok := inspectSecret(s, resource, "url.fragment", "url.fragment", parsed.Fragment); ok {
+					out = append(out, finding)
 				}
 			}
 		}
 	}
 
 	if len(s.Tools) > 0 {
+		for i, tool := range s.Tools {
+			data, err := jsonMarshal(tool)
+			if err == nil {
+				location := fmt.Sprintf("tools[%d]", i)
+				if finding, ok := inspectSecret(s, resource, location, location, string(data)); ok {
+					out = append(out, finding)
+				}
+			}
+		}
 		hash := schemaHash(s.Tools)
 		out = append(out, model.Finding{
 			ID: id("fingerprint", s.Config, s.Name, hash), Severity: "info", Category: "schema-fingerprint",
@@ -143,7 +172,7 @@ func secretFinding(s model.Server, resource, location, key, title, severity, val
 	return model.Finding{
 		ID: id("secret", s.Config, s.Name, location, key), Severity: severity, Category: "secret-exposure",
 		Title: title, Description: "A value matched a credential heuristic or appeared in a field whose name indicates sensitive data. This is a heuristic finding; AgentGuard does not validate credentials.",
-		Resource: resource, Location: location, Evidence: redact(value),
+		Resource: resource, Location: SafeLabel(location), Evidence: redact(value),
 		Remediation: "Move credentials to an OS-backed secret store or managed secret provider. If this value was exposed, rotate it using the provider's approved process.",
 		Score: severityScore(severity), Tags: []string{"secret", "credential"},
 	}
@@ -171,11 +200,66 @@ func id(parts ...string) string {
 }
 
 func redact(value string) string {
-	runes := []rune(value)
-	if len(runes) <= 8 {
+	if value == "" {
+		return ""
+	}
+	return "[REDACTED]"
+}
+
+var secretAssignment = regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|token|client[_-]?secret|password)\s*["']?\s*[:=]\s*["']?[^\s,;]+`)
+
+func SafeLabel(value string) string {
+	if value == "" {
+		return ""
+	}
+	value = ansiEscape.ReplaceAllString(value, "")
+	value = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, value)
+	if value == "" {
+		return ""
+	}
+	for _, pattern := range secretPatterns {
+		if pattern.re.MatchString(value) {
+			return "[REDACTED]"
+		}
+	}
+	if secretAssignment.MatchString(value) {
 		return "[REDACTED]"
 	}
-	return fmt.Sprintf("%s…%s [REDACTED]", string(runes[:3]), string(runes[len(runes)-3:]))
+	if strings.Contains(value, "://") {
+		if parsed, err := url.Parse(value); err == nil {
+			if parsed.User != nil {
+				return "[REDACTED]"
+			}
+			for key, values := range parsed.Query() {
+				if sensitiveEnvName.MatchString(key) {
+					for _, item := range values {
+						if item != "" {
+							return "[REDACTED]"
+						}
+					}
+				}
+			}
+			if secretAssignment.MatchString(parsed.Fragment) {
+				return "[REDACTED]"
+			}
+		}
+	}
+	runes := []rune(value)
+	if len(runes) > 512 {
+		return string(runes[:512]) + "…"
+	}
+	return value
+}
+
+func safeResource(s model.Server) string {
+	name := SafeLabel(s.Name)
+	config := SafeLabel(filepath.Base(s.Config))
+	return name + " (" + config + ")"
 }
 
 func severityScore(severity string) int {
