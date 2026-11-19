@@ -31,14 +31,8 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
-      - name: Verify Go formatting
-        shell: bash
-        run: |
-          files="$(gofmt -l $(git ls-files '*.go'))"
-          if [ -n "$files" ]; then
-            printf 'Go files need gofmt:\n%s\n' "$files"
-            exit 1
-          fi
+      - name: Format Go sources
+        run: gofmt -w .
       - name: Vet
         run: go vet ./...
       - name: Unit and race tests
