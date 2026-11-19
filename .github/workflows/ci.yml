@@ -31,8 +31,14 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
-      - name: Format Go sources
-        run: gofmt -w .
+      - name: Verify Go formatting
+        shell: bash
+        run: |
+          files="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$files" ]; then
+            printf 'Go files need gofmt:\n%s\n' "$files"
+            exit 1
+          fi
       - name: Vet
         run: go vet ./...
       - name: Unit and race tests
@@ -46,4 +52,4 @@ jobs:
       - name: Build
         run: go build ./...
       - name: Vulnerability scan
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
