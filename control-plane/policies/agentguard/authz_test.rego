@@ -3,12 +3,12 @@ package agentguard.authz
 import rego.v1
 
 test_default_deny_for_unknown_action if {
-	decision with input as {
+	result := decision with input as {
 		"action": "unknown",
 		"actor": {"tenant_id": "tenant-a", "role": "viewer"},
 		"resource": {"tenant_id": "tenant-a"}
 	}
-	decision.effect == "deny"
+	result.effect == "deny"
 }
 
 test_inventory_read_allowed_for_tenant_member if {
