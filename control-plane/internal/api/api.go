@@ -115,7 +115,7 @@ func (a *API) evaluatePolicy(w http.ResponseWriter,r *http.Request){
 	p:=principal(r)
 	risk:="";approvedSchemaHash:="";approvalRequired:=false
 	if body.Action=="tool.invoke"{
-		if strings.TrimSpace(body.Tool.Name)==""||!schemaHashPattern.MatchString(body.Tool.SchemaHash){writeError(w,422,"validation_error","Tool name and lowercase SHA-256 schema_hash are required");return}
+		if strings.TrimSpace(body.Tool.Name)==""||!validSchemaHash(body.Tool.SchemaHash){writeError(w,422,"validation_error","Tool name and lowercase SHA-256 schema_hash are required");return}
 		baseline,err:=a.store.GetToolBaseline(r.Context(),p.TenantID,body.Tool.Name)
 		if errors.Is(err,store.ErrNotFound){risk="critical"}else if err!=nil{writeError(w,500,"baseline_lookup_failed","Unable to load approved tool baseline");return}else{risk=baseline.Risk;approvedSchemaHash=baseline.ApprovedSchemaHash}
 		approvalRequired=risk=="medium"||risk=="high"||risk=="critical"
@@ -223,3 +223,9 @@ func securityHeaders(next http.Handler)http.Handler{return http.HandlerFunc(func
 	w.Header().Set("X-Content-Type-Options","nosniff");w.Header().Set("Cache-Control","no-store");w.Header().Set("Referrer-Policy","no-referrer");w.Header().Set("X-Frame-Options","DENY")
 	next.ServeHTTP(w,r)
 })}
+
+func validSchemaHash(value string) bool {
+	if len(value) != 64 || strings.ToLower(value) != value { return false }
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
