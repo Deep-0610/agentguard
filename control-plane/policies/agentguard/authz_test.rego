@@ -35,7 +35,7 @@ test_high_impact_requires_approval if {
 		"action": "tool.invoke",
 		"actor": {"tenant_id": "tenant-a", "role": "analyst"},
 		"resource": {"tenant_id": "tenant-a"},
-		"tool": {"risk": "critical", "schema_hash": "same", "approved_schema_hash": "same"},
+		"tool": {"risk": "critical", "schema_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "approved_schema_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 		"approval": {"required": true}
 	}
 	result.effect == "approval_required"
@@ -48,4 +48,14 @@ test_tenant_mismatch_denied if {
 		"resource": {"tenant_id": "tenant-b"}
 	}
 	result.effect == "deny"
+}
+
+test_low_risk_matching_tool_allowed if {
+	result := decision with input as {
+		"action": "tool.invoke",
+		"actor": {"tenant_id": "tenant-a", "role": "analyst"},
+		"resource": {"tenant_id": "tenant-a"},
+		"tool": {"risk": "low", "schema_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "approved_schema_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	}
+	result.effect == "allow"
 }
