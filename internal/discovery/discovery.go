@@ -74,7 +74,10 @@ func Expand(path string) ([]string, error) {
 		if entries > maxWalkEntries { return fmt.Errorf("directory contains more than %d entries", maxWalkEntries) }
 		rel, relErr := filepath.Rel(path, p)
 		if relErr != nil { return relErr }
-		if depth := strings.Count(rel, string(os.PathSeparator)); depth > maxWalkDepth { return filepath.SkipDir }
+		if depth := strings.Count(rel, string(os.PathSeparator)); depth > maxWalkDepth {
+			if d.IsDir() { return filepath.SkipDir }
+			return nil
+		}
 		if d.Type()&os.ModeSymlink != 0 {
 			if d.IsDir() { return filepath.SkipDir }
 			return nil
@@ -115,16 +118,13 @@ func Load(paths []string) ([]model.Server, error) {
 			file.Close()
 			return nil, fmt.Errorf("config %s exceeds %d bytes", path, maxConfigBytes)
 		}
-		totalBytes += opened.Size()
-		if totalBytes > maxTotalConfigBytes {
-			file.Close()
-			return nil, fmt.Errorf("total config input exceeds %d bytes", maxTotalConfigBytes)
-		}
 		data, readErr := io.ReadAll(io.LimitReader(file, maxConfigBytes+1))
 		closeErr := file.Close()
 		if readErr != nil { return nil, readErr }
 		if closeErr != nil { return nil, closeErr }
 		if len(data) > maxConfigBytes { return nil, fmt.Errorf("config %s exceeds %d bytes", path, maxConfigBytes) }
+		totalBytes += int64(len(data))
+		if totalBytes > maxTotalConfigBytes { return nil, fmt.Errorf("total config input exceeds %d bytes", maxTotalConfigBytes) }
 		var root map[string]json.RawMessage
 		if err := json.Unmarshal(data, &root); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", path, err)
