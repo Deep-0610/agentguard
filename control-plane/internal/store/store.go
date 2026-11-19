@@ -156,3 +156,7 @@ func (s *Store) RevokeAPIKey(ctx context.Context,p Principal,id string)error{
 	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"api_key.revoked","api_key",id,"",map[string]any{"target_role":targetRole});err!=nil{return err}
 	return tx.Commit()
 }
+
+func (s *Store) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
