@@ -310,7 +310,6 @@ components:
           type: string
           enum: [agent, mcp_server, oauth_app, service_principal, api_token, service_account, workload_identity, bot, unknown]
         name: { type: string, maxLength: 512 }
-        owner_email: { type: string, maxLength: 320 }
         environment: { type: string, maxLength: 80 }
         scopes:
           type: array
