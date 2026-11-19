@@ -32,7 +32,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: true
       - name: Format Go sources
-        run: gofmt -w .
+        run: files=$(find . -name "*.go" -type f); test -z "$(gofmt -l $files)"
       - name: Vet
         run: go vet ./...
       - name: Unit and race tests
