@@ -41,7 +41,6 @@ type AssetInput struct {
 	Environment string `json:"environment,omitempty"`
 	Scopes []string `json:"scopes,omitempty"`
 	RiskScore int `json:"risk_score,omitempty"`
-	Metadata map[string]any `json:"metadata,omitempty"`
 }
 type FindingInput struct {
 	Fingerprint string `json:"fingerprint"`
