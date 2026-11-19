@@ -82,10 +82,11 @@ func (s *Store) BeginTOTPEnrollment(ctx context.Context,p Principal)(string,erro
 	secret,err:=generateTOTPSecret();if err!=nil{return "",err}
 	ciphertext,err:=s.encryptMFASecret(p.TenantID,p.KeyID,secret);if err!=nil{return "",err}
 	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return "",err};defer tx.Rollback()
-	var enabled bool
-	err=tx.QueryRowContext(ctx,`SELECT mfa_enabled FROM api_keys WHERE tenant_id=$1 AND key_id=$2 AND revoked_at IS NULL FOR UPDATE`,p.TenantID,p.KeyID).Scan(&enabled)
+	var enabled bool;var locked sql.NullTime
+	err=tx.QueryRowContext(ctx,`SELECT mfa_enabled,mfa_locked_until FROM api_keys WHERE tenant_id=$1 AND key_id=$2 AND revoked_at IS NULL FOR UPDATE`,p.TenantID,p.KeyID).Scan(&enabled,&locked)
 	if err==sql.ErrNoRows{return "",ErrNotFound};if err!=nil{return "",err}
 	if enabled{return "",fmt.Errorf("MFA is already enabled; contact an administrator for recovery")}
+	if locked.Valid&&locked.Time.After(time.Now()){return "",ErrMFALocked}
 	if _,err=tx.ExecContext(ctx,`UPDATE api_keys SET mfa_secret_ciphertext=$3,mfa_last_used_step=0,mfa_failed_attempts=0,mfa_locked_until=NULL,mfa_verified_at=NULL WHERE tenant_id=$1 AND key_id=$2`,p.TenantID,p.KeyID,ciphertext);err!=nil{return "",err}
 	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"mfa.totp.enrollment_started","api_key",p.KeyID,p.RequestID,map[string]any{"method":"totp"});err!=nil{return "",err}
 	if err=tx.Commit();err!=nil{return "",err}
@@ -101,6 +102,7 @@ func (s *Store) ConfirmTOTP(ctx context.Context,p Principal,code string)error{
 	if len(ciphertext)==0{return ErrMFARequired}
 	now:=time.Now()
 	if locked.Valid&&locked.Time.After(now){return ErrMFALocked}
+	if locked.Valid{attempts=0}
 	secret,err:=s.decryptMFASecret(p.TenantID,p.KeyID,ciphertext);if err!=nil{return err}
 	step,valid:=validateTOTP(secret,code,now,lastStep)
 	if !valid{
@@ -134,6 +136,7 @@ func (s *Store) RevokeAPIKey(ctx context.Context,p Principal,id,code string)erro
 	if !enabled||len(ciphertext)==0{return ErrMFARequired}
 	now:=time.Now()
 	if locked.Valid&&locked.Time.After(now){return ErrMFALocked}
+	if locked.Valid{attempts=0}
 	secret,err:=s.decryptMFASecret(p.TenantID,p.KeyID,ciphertext);if err!=nil{return err}
 	step,valid:=validateTOTP(secret,code,now,lastStep)
 	if !valid{
