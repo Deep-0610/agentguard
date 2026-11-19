@@ -24,7 +24,6 @@ type asset struct {
 	Source string `json:"source"`
 	Kind string `json:"kind"`
 	Name string `json:"name"`
-	OwnerStatus string `json:"owner_status"`
 	Environment string `json:"environment"`
 }
 type finding struct {
@@ -60,7 +59,7 @@ func BuildPayload(servers []model.Server,findings []model.Finding,version string
 	payload:=request{ScanID:hex.EncodeToString(random),Source:"agentguard-cli",ScannerVersion:version,CollectedAt:now.UTC(),Assets:[]asset{},Findings:[]finding{}}
 	for _,server:=range servers{
 		identity:=sha256.Sum256([]byte(filepath.Base(server.Config)+":"+server.Name))
-		payload.Assets=append(payload.Assets,asset{ExternalID:"mcp:"+hex.EncodeToString(identity[:]),Source:"mcp",Kind:"mcp_server",Name:server.Name,OwnerStatus:"UNKNOWN",Environment:"unknown"})
+		payload.Assets=append(payload.Assets,asset{ExternalID:"mcp:"+hex.EncodeToString(identity[:]),Source:"mcp",Kind:"mcp_server",Name:server.Name,Environment:"unknown"})
 	}
 	for _,item:=range findings{
 		payload.Findings=append(payload.Findings,finding{Fingerprint:item.ID,RuleID:item.Category,Severity:item.Severity,Confidence:"medium",Category:item.Category,Title:item.Title,Description:item.Description,Resource:item.Resource,Location:item.Location,Evidence:item.Evidence,Remediation:item.Remediation})
