@@ -48,7 +48,7 @@ jobs:
           cache: true
           cache-dependency-path: control-plane/go.sum
       - name: Format Go sources
-        run: gofmt -w .
+        run: files=$(find . -name "*.go" -type f); test -z "$(gofmt -l $files)"
       - name: Resolve dependencies
         run: go mod tidy
       - name: Vet
@@ -57,6 +57,8 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Build
         run: go build ./...
+      - name: Vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
       - name: Database migration smoke test
         run: go run ./cmd/controlplane migrate
       - name: Validate OPA policy syntax and unit tests
