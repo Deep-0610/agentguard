@@ -66,12 +66,14 @@ func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 	var assessedFindings []store.FindingInput
 	for i:=range req.Assets{
 		a:=&req.Assets[i]
-		if strings.TrimSpace(a.Name)==""||len(a.Name)>512||strings.TrimSpace(a.Source)==""||len(a.Source)>64||len(a.ExternalID)>512{writeError(w,422,"validation_error","Every asset requires a name and source; values must be within documented limits");return}
+		if strings.TrimSpace(a.Name)==""||len(a.Name)>512||strings.TrimSpace(a.Source)==""||len(a.Source)>64||len(a.ExternalID)>512||len(a.OwnerEmail)>320||len(a.Environment)>80{writeError(w,422,"validation_error","Every asset requires a name and source; values must be within documented limits");return}
 		if a.Kind==""{a.Kind="unknown"}
 		if !oneOf(a.Kind,"agent","mcp_server","oauth_app","service_principal","api_token","service_account","workload_identity","bot","unknown"){writeError(w,422,"validation_error","Unsupported identity kind");return}
 		if a.OwnerStatus==""{a.OwnerStatus="UNKNOWN"}
 		if !oneOf(a.OwnerStatus,"ACTIVE","SUSPENDED","UNKNOWN"){writeError(w,422,"validation_error","Unsupported owner status");return}
 		if a.SecretAgeDays<0||len(a.Scopes)>256{writeError(w,422,"validation_error","Secret age cannot be negative and scopes are limited to 256");return}
+		a.Name=redactUntrusted(a.Name);a.Source=redactUntrusted(a.Source);a.ExternalID=redactUntrusted(a.ExternalID);a.OwnerEmail=redactUntrusted(a.OwnerEmail);a.Environment=redactUntrusted(a.Environment)
+		for j:=range a.Scopes{a.Scopes[j]=redactUntrusted(a.Scopes[j])}
 		score,generated:=assessAsset(*a)
 		a.RiskScore=score
 		assessedFindings=append(assessedFindings,generated...)
@@ -82,7 +84,8 @@ func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 		if strings.TrimSpace(f.Title)==""||len(f.Title)>512||!oneOf(f.Severity,"critical","high","medium","low","info"){writeError(w,422,"validation_error","Every finding requires a title and a valid severity");return}
 		if f.Confidence==""{f.Confidence="medium"}
 		if !oneOf(f.Confidence,"low","medium","high"){writeError(w,422,"validation_error","Finding confidence must be low, medium, or high");return}
-		if f.Fingerprint==""||len(f.Fingerprint)>256||len(f.RuleID)>128||len(f.Evidence)>4096{writeError(w,422,"validation_error","Finding fingerprint, rule ID or evidence exceeds its limit");return}
+		if f.Fingerprint==""||len(f.Fingerprint)>256||len(f.RuleID)>128||len(f.Category)>128||len(f.Description)>4000||len(f.Resource)>512||len(f.Location)>512||len(f.Evidence)>4096||len(f.Remediation)>4000{writeError(w,422,"validation_error","Finding fields exceed their documented limits");return}
+		f.Title=redactUntrusted(f.Title);f.Description=redactUntrusted(f.Description);f.Resource=redactUntrusted(f.Resource);f.Location=redactUntrusted(f.Location);f.Evidence=redactUntrusted(f.Evidence);f.Remediation=redactUntrusted(f.Remediation);f.Category=redactUntrusted(f.Category)
 	}
 	hash:=sha256.Sum256(raw)
 	result,err:=a.store.Ingest(r.Context(),principal(r),req,hex.EncodeToString(hash[:]))
