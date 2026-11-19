@@ -79,6 +79,7 @@ type IngestResult struct {
 	ScanID string `json:"scan_id"`
 	AssetsUpserted int `json:"assets_upserted"`
 	FindingsUpserted int `json:"findings_upserted"`
+	RelationshipsUpserted int `json:"relationships_upserted"`
 	Duplicate bool `json:"duplicate"`
 }
 
