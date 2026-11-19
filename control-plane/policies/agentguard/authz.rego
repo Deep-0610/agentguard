@@ -44,6 +44,8 @@ decision := {
   input.action == "tool.invoke"
   input.actor.tenant_id == input.resource.tenant_id
   input.tool.risk in {"high", "critical"}
+  regex.match("^[a-f0-9]{64}$", input.tool.schema_hash)
+  regex.match("^[a-f0-9]{64}$", input.tool.approved_schema_hash)
   input.tool.schema_hash == input.tool.approved_schema_hash
   input.approval.required == true
 }
@@ -56,6 +58,8 @@ decision := {
   input.action == "tool.invoke"
   input.actor.tenant_id == input.resource.tenant_id
   input.tool.risk in {"high", "critical"}
+  regex.match("^[a-f0-9]{64}$", input.tool.schema_hash)
+  regex.match("^[a-f0-9]{64}$", input.tool.approved_schema_hash)
   input.tool.schema_hash == input.tool.approved_schema_hash
   input.approval.required != true
 }
@@ -68,5 +72,7 @@ decision := {
   input.action == "tool.invoke"
   input.actor.tenant_id == input.resource.tenant_id
   input.tool.risk == "low"
+  regex.match("^[a-f0-9]{64}$", input.tool.schema_hash)
+  regex.match("^[a-f0-9]{64}$", input.tool.approved_schema_hash)
   input.tool.schema_hash == input.tool.approved_schema_hash
 }
