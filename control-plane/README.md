@@ -77,7 +77,7 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
     "external_id": "helper-app",
     "source": "github",
     "kind": "oauth_app",
-    "name": "helper-app",
+    "name": "helper-app"
   }],
   "relationships": [{
     "from_source": "mcp",
