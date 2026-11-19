@@ -110,3 +110,22 @@ func TestRedactUntrustedRemovesBearerAndJWT(t *testing.T) {
 		t.Fatalf("bearer or JWT credential survived redaction: %q", got)
 	}
 }
+
+func TestReadJSONRejectsDuplicateNestedKeys(t *testing.T) {
+	req:=httptest.NewRequest(http.MethodPost,"/",strings.NewReader(`{"outer":{"role":"viewer","role":"owner"}}`))
+	req.Header.Set("Content-Type","application/json")
+	var dst map[string]any
+	if _,err:=readJSON(httptest.NewRecorder(),req,&dst,1024);err==nil||!strings.Contains(err.Error(),"duplicate object key"){
+		t.Fatalf("expected duplicate nested JSON key to be rejected, got %v",err)
+	}
+}
+
+func TestReadJSONRejectsExcessiveNesting(t *testing.T) {
+	payload:=strings.Repeat("[",130)+"0"+strings.Repeat("]",130)
+	req:=httptest.NewRequest(http.MethodPost,"/",strings.NewReader(payload))
+	req.Header.Set("Content-Type","application/json")
+	var dst any
+	if _,err:=readJSON(httptest.NewRecorder(),req,&dst,4096);err==nil||!strings.Contains(err.Error(),"nesting exceeds"){
+		t.Fatalf("expected excessive JSON nesting to be rejected, got %v",err)
+	}
+}
