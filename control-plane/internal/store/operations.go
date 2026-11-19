@@ -86,10 +86,11 @@ func (s *Store) Summary(ctx context.Context,tenant string)(map[string]any,error)
 	return out,nil
 }
 func (s *Store) ListIdentities(ctx context.Context,tenant string,limit int)([]map[string]any,error){
-	rows,err:=s.db.QueryContext(ctx,`SELECT id::text,external_key,source,kind,name,owner_email,owner_status,environment,scopes,risk_score,first_seen_at,last_seen_at FROM identities WHERE tenant_id=$1 ORDER BY risk_score DESC,last_seen_at DESC LIMIT $2`,tenant,limit)
+	rows,err:=s.db.QueryContext(ctx,`SELECT id::text,external_key,source,kind,name,owner_email,owner_status,environment,to_json(scopes)::text,risk_score,first_seen_at,last_seen_at FROM identities WHERE tenant_id=$1 ORDER BY risk_score DESC,last_seen_at DESC LIMIT $2`,tenant,limit)
 	if err!=nil{return nil,err};defer rows.Close();out:=[]map[string]any{}
-	for rows.Next(){var id,external,source,kind,name,status,environment string;var owner sql.NullString;var scopes []string;var score int;var first,last time.Time
-		if err=rows.Scan(&id,&external,&source,&kind,&name,&owner,&status,&environment,&scopes,&score,&first,&last);err!=nil{return nil,err}
+	for rows.Next(){var id,external,source,kind,name,status,environment string;var owner sql.NullString;var scopesJSON string;var scopes []string;var score int;var first,last time.Time
+		if err=rows.Scan(&id,&external,&source,&kind,&name,&owner,&status,&environment,&scopesJSON,&score,&first,&last);err!=nil{return nil,err}
+		if err=json.Unmarshal([]byte(scopesJSON),&scopes);err!=nil{return nil,err}
 		out=append(out,map[string]any{"id":id,"external_id":external,"source":source,"kind":kind,"name":name,"owner_email":owner.String,"owner_status":status,"environment":environment,"scopes":scopes,"risk_score":score,"first_seen_at":first,"last_seen_at":last})
 	};return out,rows.Err()
 }
