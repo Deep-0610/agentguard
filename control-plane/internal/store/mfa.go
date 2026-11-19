@@ -12,10 +12,8 @@ import (
 	"database/sql"
 	"encoding/base32"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -167,6 +165,3 @@ func TOTPProvisioningURI(issuer,account,secret string)string{
 	return "otpauth://totp/"+label+"?"+query.Encode()
 }
 
-func TOTPCodeForTest(secret string,at time.Time)(string,int64,error){return totpAt(secret,at)}
-func ParseTOTPCode(code string)int{n,_:=strconv.Atoi(code);return n}
-var _ = hex.EncodeToString
