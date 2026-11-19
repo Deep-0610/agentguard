@@ -51,4 +51,10 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	backupPrincipal,err:=s.Authenticate(ctx,backupSecret);if err!=nil{t.Fatal(err)}
 	if err=s.RevokeAPIKey(ctx,backupPrincipal,backupKey.ID);err==nil{t.Fatal("expected last active owner key revocation to be blocked")}
 	if _,err=s.Authenticate(ctx,keyA);err==nil{t.Fatal("revoked API key must no longer authenticate")}
+	hash:="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if _,err=s.SetToolBaseline(ctx,backupPrincipal,"internal.search",hash,"low");err!=nil{t.Fatal(err)}
+	baseline,err:=s.GetToolBaseline(ctx,tenantA,"internal.search");if err!=nil{t.Fatal(err)}
+	if baseline.ApprovedSchemaHash!=hash||baseline.Risk!="low"{t.Fatalf("unexpected tool baseline: %+v",baseline)}
+	if _,err=s.GetToolBaseline(ctx,tenantB,"internal.search");err!=ErrNotFound{t.Fatalf("tenant B must not see tenant A baseline: %v",err)}
+	audit,err=s.VerifyAuditChain(ctx,tenantA);if err!=nil||!audit.Valid{t.Fatalf("audit chain invalid after tool baseline update: %+v %v",audit,err)}
 }
