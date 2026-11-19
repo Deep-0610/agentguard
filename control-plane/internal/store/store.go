@@ -27,7 +27,7 @@ type APIKey struct {
 	Role string `json:"role"`
 	Prefix string `json:"prefix"`
 	CreatedAt time.Time `json:"created_at"`
-	LastUsedAt *time.Time `json:"-"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
