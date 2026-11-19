@@ -48,20 +48,20 @@ Reference: [NIST SP 800-218](https://csrc.nist.gov/pubs/sp/800/218/final).
 
 ## 4. Control-plane security backlog
 
-- [ ] Define tenant boundary and data classification.
-- [ ] Enforce tenant scope in every query, command, background job, export, and cache key.
+- [x] Define tenant boundary and data classification in the control-plane schema and threat model.
+- [x] Enforce tenant scope in implemented API data-access paths; background jobs, exports, and shared caches are not implemented.
 - [ ] Add automated cross-tenant negative tests.
-- [ ] Use a managed secret store; encrypt connector credentials with envelope encryption and KMS.
+- [ ] Use a managed secret store; encrypt connector credentials with envelope encryption and KMS. API-key hashes use HMAC; TOTP seeds use AES-GCM with a key derived from the deployment pepper.
 - [ ] Never log bearer tokens, client secrets, private keys, or raw provider payloads by default.
 - [ ] Implement OIDC with secure state, nonce, PKCE where applicable, and strict issuer/audience checks.
-- [ ] Implement RBAC with deny-by-default authorization and resource scoping.
-- [ ] Add append-only audit event semantics and protected export.
+- [x] Implement API-key role allowlists and deny-by-default OPA policy evaluation for the implemented API surface. User-level RBAC and OIDC are not implemented.
+- [x] Add per-tenant hash-chained audit events, verification, and database triggers blocking ordinary UPDATE/DELETE/TRUNCATE. External anchoring and protected export remain outstanding.
 - [ ] Add CSRF protections, secure cookies, rate limiting, request validation and security headers.
 - [ ] Define retention, deletion, backup, restore, and incident response procedures.
-- [ ] Run dependency, container, secret, and static analysis scans in CI.
+- [ ] Run dependency, container, secret, and static analysis scans in CI. Go vulnerability scanning and vet run in CI; container, secret, and broader SAST scans remain outstanding.
 - [ ] Complete an independent penetration test before general availability.
 
-## 5. Connector security contract
+## 5. Current privileged-action step-up\n\nTOTP is attached to a privileged API key, with an encrypted seed, one-time enrollment display, code replay prevention, and a 15-minute lockout after five failed attempts. This protects API-key revocation only. It is not OIDC user authentication, not IdP-enforced MFA, and not a substitute for a user membership model.\n\n## 6. Connector security contract
 
 Every connector must document:
 - Provider API and supported operations.
@@ -75,7 +75,7 @@ Every connector must document:
 
 Default to read-only permissions. Never request tenant-wide administrator permissions merely for convenience.
 
-## 6. Gateway security contract
+## 7. Gateway security contract
 
 The gateway must be designed against the MCP authorization specification applicable to the implementation version. For HTTP transports, validate issuer, audience/resource, signature, expiry, and scopes; do not forward a token to a different resource server. Protect credentials from logs and caches. Use HTTPS for remote authorization endpoints and strict redirect URI validation.
 
@@ -90,7 +90,7 @@ The gateway must also address:
 - Human approval spoofing, expiry, replay and separation of duties.
 - Safe failure behavior and audit completeness.
 
-## 7. Release gate
+## 8. Release gate
 
 A release may be called production-ready only after the release owner can produce evidence for:
 - Threat model and reviewed architecture.
