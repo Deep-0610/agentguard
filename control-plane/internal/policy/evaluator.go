@@ -18,7 +18,7 @@ type Decision struct {
 }
 type Evaluator struct { endpoint string; client *http.Client }
 func New(endpoint string)*Evaluator{
-	return &Evaluator{endpoint:strings.TrimRight(endpoint,"/"),client:&http.Client{Timeout:150*time.Millisecond}}
+	return &Evaluator{endpoint:strings.TrimRight(endpoint,"/"),client:&http.Client{Timeout:750*time.Millisecond}}
 }
 func (e *Evaluator) Enabled()bool{return e!=nil&&e.endpoint!=""}
 func (e *Evaluator) Evaluate(ctx context.Context,input map[string]any)(Decision,error){
@@ -36,3 +36,14 @@ func (e *Evaluator) Evaluate(ctx context.Context,input map[string]any)(Decision,
 	return *envelope.Result,nil
 }
 func oneOf(v string,values ...string)bool{for _,candidate:=range values{if v==candidate{return true}};return false}
+
+func (e *Evaluator) Ready(ctx context.Context) error {
+	if !e.Enabled() { return fmt.Errorf("OPA policy service is not configured") }
+	req,err:=http.NewRequestWithContext(ctx,http.MethodGet,e.endpoint+"/health",nil)
+	if err!=nil{return err}
+	resp,err:=e.client.Do(req)
+	if err!=nil{return fmt.Errorf("OPA health check failed: %w",err)}
+	defer resp.Body.Close()
+	if resp.StatusCode<200||resp.StatusCode>=300{return fmt.Errorf("OPA health check returned HTTP %d",resp.StatusCode)}
+	return nil
+}
