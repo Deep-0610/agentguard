@@ -77,8 +77,9 @@ func (s *Store) Summary(ctx context.Context,tenant string)(map[string]any,error)
 	out:=map[string]any{}
 	queries:=[]struct{key,query string}{
 		{"identities","SELECT count(*) FROM identities WHERE tenant_id=$1"},
-		{"open_findings","SELECT count(*) FROM findings WHERE tenant_id=$1 AND status='open'"},
-		{"critical_findings","SELECT count(*) FROM findings WHERE tenant_id=$1 AND status='open' AND severity='critical'"},
+		{"open_findings","SELECT count(*) FROM findings WHERE tenant_id=$1 AND status='open' AND (suppression_expires_at IS NULL OR suppression_expires_at<=now())"},
+		{"critical_findings","SELECT count(*) FROM findings WHERE tenant_id=$1 AND status='open' AND severity='critical' AND (suppression_expires_at IS NULL OR suppression_expires_at<=now())"},
+		{"suppressed_findings","SELECT count(*) FROM findings WHERE tenant_id=$1 AND suppression_reason IS NOT NULL AND suppression_expires_at>now()"},
 		{"orphaned_identities","SELECT count(*) FROM identities WHERE tenant_id=$1 AND owner_status IN ('UNKNOWN','SUSPENDED')"},
 		{"scans_24h","SELECT count(*) FROM scans WHERE tenant_id=$1 AND collected_at>now()-interval '24 hours'"},
 	}
@@ -101,7 +102,7 @@ func (s *Store) ListFindings(ctx context.Context,tenant,status string,limit int)
 	rows,err:=s.db.QueryContext(ctx,query,args...);if err!=nil{return nil,err};defer rows.Close();out:=[]map[string]any{}
 	for rows.Next(){var id,fp,rule,severity,confidence,category,title,description,resource,location,evidence,remediation,state string;var first,last time.Time;var occurrences int64;var suppressionReason sql.NullString;var suppressionExpires sql.NullTime
 		if err=rows.Scan(&id,&fp,&rule,&severity,&confidence,&category,&title,&description,&resource,&location,&evidence,&remediation,&state,&first,&last,&occurrences,&suppressionReason,&suppressionExpires);err!=nil{return nil,err}
-		out=append(out,map[string]any{"id":id,"fingerprint":fp,"rule_id":rule,"severity":severity,"confidence":confidence,"category":category,"title":title,"description":description,"resource":resource,"location":location,"evidence":evidence,"remediation":remediation,"status":state,"first_seen_at":first,"last_seen_at":last,"occurrences":occurrences,"suppression_reason":suppressionReason.String,"suppression_expires_at":nullableTime(suppressionExpires)})
+		out=append(out,map[string]any{"id":id,"fingerprint":fp,"rule_id":rule,"severity":severity,"confidence":confidence,"category":category,"title":title,"description":description,"resource":resource,"location":location,"evidence":evidence,"remediation":remediation,"status":state,"first_seen_at":first,"last_seen_at":last,"occurrences":occurrences,"suppression_reason":suppressionReason.String,"suppression_expires_at":nullableTime(suppressionExpires),"is_suppressed":suppressionExpires.Valid&&suppressionExpires.Time.After(time.Now())})
 	};return out,rows.Err()
 }
 func (s *Store) ListAudit(ctx context.Context,tenant string,limit int)([]map[string]any,error){
