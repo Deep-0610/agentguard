@@ -67,6 +67,9 @@ func runScan(args []string) error {
 	if err != nil {
 		return err
 	}
+	if len(configs) == 0 {
+		return fmt.Errorf("no MCP server entries found in the supplied configuration files")
+	}
 	findings := scanner.Analyze(configs)
 	data, err := report.Render(*format, configs, findings)
 	if err != nil {
@@ -81,7 +84,9 @@ func runScan(args []string) error {
 
 func writeReport(path string, data []byte, inputs []string) error {
 	outputPath, err := filepath.Abs(path)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	outputPath = filepath.Clean(outputPath)
 	outputInfo, statErr := os.Lstat(outputPath)
 	if statErr == nil {
@@ -93,7 +98,9 @@ func writeReport(path string, data []byte, inputs []string) error {
 	}
 	for _, input := range inputs {
 		inputPath, err := filepath.Abs(input)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		if filepath.Clean(inputPath) == outputPath {
 			return fmt.Errorf("report output must not overwrite scanned input: %s", outputPath)
 		}
@@ -106,7 +113,9 @@ func writeReport(path string, data []byte, inputs []string) error {
 	}
 	dir := filepath.Dir(outputPath)
 	temp, err := os.CreateTemp(dir, ".agentguard-report-*.tmp")
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	tempPath := temp.Name()
 	defer os.Remove(tempPath)
 	if err := temp.Chmod(0600); err != nil {
@@ -121,7 +130,9 @@ func writeReport(path string, data []byte, inputs []string) error {
 		temp.Close()
 		return err
 	}
-	if err := temp.Close(); err != nil { return err }
+	if err := temp.Close(); err != nil {
+		return err
+	}
 	if err := os.Rename(tempPath, outputPath); err != nil {
 		return fmt.Errorf("atomically replace report %s: %w", outputPath, err)
 	}
