@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"path/filepath"
 	"strings"
 
 	"github.com/Deep-0610/agentguard/internal/model"
+	"github.com/Deep-0610/agentguard/internal/scanner"
 )
 
 func Render(format string, servers []model.Server, findings []model.Finding) ([]byte, error) {
@@ -40,6 +42,8 @@ func safeServers(in []model.Server) []model.Server {
 	out := make([]model.Server, len(in))
 	for i, s := range in {
 		out[i] = s
+		out[i].Name = scanner.SafeLabel(s.Name)
+		out[i].Config = scanner.SafeLabel(filepath.Base(s.Config))
 		out[i].Command = ""
 		out[i].Args = nil
 		out[i].URL = ""
