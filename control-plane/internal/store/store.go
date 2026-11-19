@@ -36,7 +36,7 @@ type AssetInput struct {
 	Source string `json:"source"`
 	Kind string `json:"kind"`
 	Name string `json:"name"`
-	OwnerEmail string `json:"owner_email,omitempty"`
+	OwnerEmail string `json:"-"`
 	OwnerStatus string `json:"-"`
 	Environment string `json:"environment,omitempty"`
 	Scopes []string `json:"scopes,omitempty"`
