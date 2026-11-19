@@ -69,7 +69,6 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
     "source": "mcp",
     "kind": "mcp_server",
     "name": "internal-docs",
-    "owner_status": "UNKNOWN",
     "environment": "development",
     "scopes": []
   }, {
@@ -77,8 +76,6 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
     "source": "github",
     "kind": "oauth_app",
     "name": "helper-app",
-    "owner_status": "ACTIVE",
-    "verified": true
   }],
   "relationships": [{
     "from_source": "mcp",
