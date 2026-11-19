@@ -39,6 +39,7 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	if len(identityEvents)==0{t.Fatal("expected identity drift history after owner state changed")}
 	var findingID string
 	if err=s.db.QueryRowContext(ctx,`SELECT id::text FROM findings WHERE tenant_id=$1 AND fingerprint=$2`,tenantA,"fp-"+suffix).Scan(&findingID);err!=nil{t.Fatal(err)}
+	if err=s.SetFindingSuppression(ctx,principalB,findingID,"cross-tenant attempt",time.Now().Add(7*24*time.Hour));err!=ErrNotFound{t.Fatalf("tenant B must not suppress tenant A finding, got %v",err)}
 	if err=s.SetFindingSuppression(ctx,principalA,findingID,"Known test fixture; tracked for remediation",time.Now().Add(7*24*time.Hour));err!=nil{t.Fatal(err)}
 	findings,err:=s.ListFindings(ctx,tenantA,"",100);if err!=nil{t.Fatal(err)}
 	foundSuppressed:=false
