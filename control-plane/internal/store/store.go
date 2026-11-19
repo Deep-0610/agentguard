@@ -20,7 +20,7 @@ var ErrNotFound = errors.New("not found")
 var ErrDuplicateScan = errors.New("scan id already exists with different content")
 
 type Store struct { db *sql.DB; pepper []byte }
-type Principal struct { TenantID string; KeyID string; Role string; Name string }
+type Principal struct { TenantID string; KeyID string; Role string; Name string; RequestID string }
 type APIKey struct {
 	ID string `json:"id"`
 	Name string `json:"name"`
@@ -128,6 +128,8 @@ func (s *Store) CreateAPIKey(ctx context.Context,p Principal,name,role string,ex
 	if strings.TrimSpace(name)==""||len(name)>120{return APIKey{},"",fmt.Errorf("key name is required and must be at most 120 characters")}
 	keyID,secret,token,err:=makeKey();if err!=nil{return APIKey{},"",err}
 	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return APIKey{},"",err};defer tx.Rollback()
+	var tenantLock string
+	if err=tx.QueryRowContext(ctx,`SELECT id::text FROM tenants WHERE id=$1 FOR UPDATE`,p.TenantID).Scan(&tenantLock);err!=nil{return APIKey{},"",err}
 	var key APIKey
 	err=tx.QueryRowContext(ctx,`INSERT INTO api_keys(tenant_id,key_id,secret_hash,name,role,expires_at,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id::text,name,role,created_at,expires_at`,p.TenantID,keyID,keyDigest(secret,s.pepper),strings.TrimSpace(name),role,expires,p.KeyID).Scan(&key.ID,&key.Name,&key.Role,&key.CreatedAt,&key.ExpiresAt)
 	if err!=nil{return APIKey{},"",err}
@@ -137,13 +139,15 @@ func (s *Store) CreateAPIKey(ctx context.Context,p Principal,name,role string,ex
 	return key,token,nil
 }
 func (s *Store) ListAPIKeys(ctx context.Context,tenant string)([]APIKey,error){
-	rows,err:=s.db.QueryContext(ctx,`SELECT id::text,name,role,'ag_live_'||key_id,created_at,last_used_at,expires_at,revoked_at FROM api_keys WHERE tenant_id=$1 ORDER BY created_at DESC`,tenant);if err!=nil{return nil,err};defer rows.Close()
+	rows,err:=s.db.QueryContext(ctx,`SELECT id::text,name,role,'ag_live_'||left(key_id,8),created_at,last_used_at,expires_at,revoked_at FROM api_keys WHERE tenant_id=$1 ORDER BY created_at DESC`,tenant);if err!=nil{return nil,err};defer rows.Close()
 	out:=[]APIKey{}
 	for rows.Next(){var k APIKey;var last,expires,revoked sql.NullTime;if err=rows.Scan(&k.ID,&k.Name,&k.Role,&k.Prefix,&k.CreatedAt,&last,&expires,&revoked);err!=nil{return nil,err};if last.Valid{k.LastUsedAt=&last.Time};if expires.Valid{k.ExpiresAt=&expires.Time};if revoked.Valid{k.RevokedAt=&revoked.Time};out=append(out,k)}
 	return out,rows.Err()
 }
 func (s *Store) RevokeAPIKey(ctx context.Context,p Principal,id string)error{
 	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return err};defer tx.Rollback()
+	var tenantLock string
+	if err=tx.QueryRowContext(ctx,`SELECT id::text FROM tenants WHERE id=$1 FOR UPDATE`,p.TenantID).Scan(&tenantLock);err!=nil{return err}
 	var targetRole string
 	err=tx.QueryRowContext(ctx,`SELECT role FROM api_keys WHERE tenant_id=$1 AND id=$2 AND revoked_at IS NULL FOR UPDATE`,p.TenantID,id).Scan(&targetRole)
 	if err==sql.ErrNoRows{return ErrNotFound};if err!=nil{return err}
