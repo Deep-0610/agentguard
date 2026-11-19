@@ -76,27 +76,67 @@ func renderHTML(r model.Result) ([]byte, error) {
 }
 
 func renderSARIF(r model.Result) ([]byte, error) {
-	type location struct { URI string `json:"uri"` }
-	type physical struct { ArtifactLocation location `json:"artifactLocation"` }
-	type message struct { Text string `json:"text"` }
-	type sarifLocation struct { PhysicalLocation physical `json:"physicalLocation"` }
+	type message struct {
+		Text string `json:"text"`
+	}
+	type configuration struct {
+		Level string `json:"level"`
+	}
+	type rule struct {
+		ID string `json:"id"`
+		ShortDescription message `json:"shortDescription"`
+		FullDescription message `json:"fullDescription"`
+		Help message `json:"help"`
+		DefaultConfiguration configuration `json:"defaultConfiguration"`
+	}
 	type resultItem struct {
 		RuleID string `json:"ruleId"`
 		Level string `json:"level"`
 		Message message `json:"message"`
-		Locations []sarifLocation `json:"locations,omitempty"`
 	}
-	type driver struct { Name string `json:"name"`; Rules []map[string]any `json:"rules"` }
-	type run struct { Tool struct { Driver driver `json:"driver"` } `json:"tool"`; Results []resultItem `json:"results"` }
-	doc := struct { Version string `json:"version"`; Schema string `json:"$schema"`; Runs []run `json:"runs"` }{
-		Version: "2.1.0", Schema: "https://json.schemastore.org/sarif-2.1.0.json",
+	type driver struct {
+		Name string `json:"name"`
+		Rules []rule `json:"rules"`
+	}
+	type run struct {
+		Tool struct {
+			Driver driver `json:"driver"`
+		} `json:"tool"`
+		Results []resultItem `json:"results"`
+	}
+	doc := struct {
+		Version string `json:"version"`
+		Schema string `json:"$schema"`
+		Runs []run `json:"runs"`
+	}{
+		Version: "2.1.0",
+		Schema: "https://json.schemastore.org/sarif-2.1.0.json",
 	}
 	var current run
 	current.Tool.Driver.Name = "AgentGuard"
+	seen := make(map[string]bool)
 	for _, f := range r.Findings {
 		level := "note"
-		if f.Severity == "critical" || f.Severity == "high" { level = "error" } else if f.Severity == "medium" { level = "warning" }
-		current.Results = append(current.Results, resultItem{RuleID:f.Category, Level:level, Message:message{Text:f.Title + ": " + f.Description}})
+		if f.Severity == "critical" || f.Severity == "high" {
+			level = "error"
+		} else if f.Severity == "medium" {
+			level = "warning"
+		}
+		if !seen[f.Category] {
+			seen[f.Category] = true
+			current.Tool.Driver.Rules = append(current.Tool.Driver.Rules, rule{
+				ID: f.Category,
+				ShortDescription: message{Text: f.Title},
+				FullDescription: message{Text: f.Description},
+				Help: message{Text: f.Remediation},
+				DefaultConfiguration: configuration{Level: level},
+			})
+		}
+		current.Results = append(current.Results, resultItem{
+			RuleID: f.Category,
+			Level: level,
+			Message: message{Text: f.Title + ": " + f.Description},
+		})
 	}
 	doc.Runs = []run{current}
 	return json.MarshalIndent(doc, "", "  ")
