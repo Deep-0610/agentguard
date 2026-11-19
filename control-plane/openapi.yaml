@@ -186,10 +186,47 @@ paths:
           description: Key created; secret shown once
         "422":
           description: Invalid role, name, or expiry
+  /v1/mfa/status:
+    get:
+      summary: Check TOTP MFA enrollment for the calling API key
+      responses:
+        "200":
+          description: MFA status
+  /v1/mfa/totp/enroll:
+    post:
+      summary: Begin TOTP MFA enrollment for the calling API key
+      description: Returns a one-time secret and otpauth URI. The secret is encrypted at rest using a key derived from the API-key pepper.
+      responses:
+        "201":
+          description: Enrollment secret shown once
+  /v1/mfa/totp/verify:
+    post:
+      summary: Verify and enable TOTP MFA for the calling API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: "^[0-9]{6}$" }
+      responses:
+        "200":
+          description: TOTP MFA enabled
+        "403":
+          description: Invalid or replayed code
+        "429":
+          description: MFA verification temporarily locked
   /v1/api-keys/{id}:
     delete:
-      summary: Revoke an API key
+      summary: Revoke an API key with TOTP step-up authentication
       parameters:
+        - name: X-AgentGuard-TOTP
+          in: header
+          required: true
+          schema: { type: string, pattern: "^[0-9]{6}$" }
+
         - name: id
           in: path
           required: true
