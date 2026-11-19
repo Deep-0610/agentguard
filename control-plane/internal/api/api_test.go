@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"strings"
 	"encoding/json"
 	"net/http"
