@@ -59,3 +59,14 @@ test_low_risk_matching_tool_allowed if {
 	}
 	result.effect == "allow"
 }
+
+test_medium_risk_requires_approval if {
+	result := decision with input as {
+		"action": "tool.invoke",
+		"actor": {"tenant_id": "tenant-a", "role": "analyst"},
+		"resource": {"tenant_id": "tenant-a"},
+		"tool": {"risk": "medium", "schema_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "approved_schema_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		"approval": {"required": true}
+	}
+	result.effect == "approval_required"
+}
