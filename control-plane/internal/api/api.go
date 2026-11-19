@@ -11,23 +11,26 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Deep-0610/agentguard/control-plane/internal/store"
+	"github.com/Deep-0610/agentguard/control-plane/internal/policy"
 )
 
-type API struct { store *store.Store; logger *log.Logger }
+type API struct { store *store.Store; logger *log.Logger; evaluator *policy.Evaluator }
 type principalKey struct{}
 type requestIDKey struct{}
 
-func New(s *store.Store,logger *log.Logger)*API{return &API{store:s,logger:logger}}
+func New(s *store.Store,logger *log.Logger)*API{return &API{store:s,logger:logger,evaluator:policy.New(os.Getenv("AG_OPA_URL"))}}
 func (a *API) Handler()http.Handler{
 	mux:=http.NewServeMux()
 	mux.HandleFunc("GET /healthz",func(w http.ResponseWriter,r *http.Request){writeJSON(w,200,map[string]any{"status":"ok","service":"agentguard-control-plane"})})
 	mux.HandleFunc("GET /readyz",a.ready)
 	mux.Handle("POST /v1/ingest/scans",a.auth(http.HandlerFunc(a.ingest),"owner","admin","ingest"))
+	mux.Handle("POST /v1/policies/evaluate",a.auth(http.HandlerFunc(a.evaluatePolicy),"owner","admin","analyst"))
 	mux.Handle("GET /v1/dashboard/summary",a.auth(http.HandlerFunc(a.summary),"owner","admin","analyst","viewer"))
 	mux.Handle("GET /v1/identities",a.auth(http.HandlerFunc(a.identities),"owner","admin","analyst","viewer"))
 	mux.Handle("GET /v1/findings",a.auth(http.HandlerFunc(a.findings),"owner","admin","analyst","viewer"))
@@ -86,6 +89,36 @@ func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 	if errors.Is(err,store.ErrDuplicateScan){writeError(w,409,"idempotency_conflict","scan_id was already used with a different payload");return}
 	if err!=nil{a.logger.Printf("ingest failed request_id=%s err=%v",requestIDFrom(r),err);writeError(w,500,"ingest_failed","The scan could not be ingested");return}
 	writeJSON(w,202,result)
+}
+func (a *API) evaluatePolicy(w http.ResponseWriter,r *http.Request){
+	var body struct{
+		Action string `json:"action"`
+		ResourceType string `json:"resource_type"`
+		ResourceID string `json:"resource_id"`
+		Tool struct{
+			Name string `json:"name"`
+			Risk string `json:"risk"`
+			SchemaHash string `json:"schema_hash"`
+			ApprovedSchemaHash string `json:"approved_schema_hash"`
+		} `json:"tool"`
+		Approval struct{Required bool `json:"required"`} `json:"approval"`
+	}
+	if _,err:=readJSON(w,r,&body,32<<10);err!=nil{writeError(w,400,"invalid_request",err.Error());return}
+	if !oneOf(body.Action,"inventory.read","tool.invoke"){writeError(w,422,"validation_error","Unsupported policy action");return}
+	if len(body.ResourceType)>80||len(body.ResourceID)>256||len(body.Tool.Name)>256{writeError(w,422,"validation_error","Policy resource or tool fields exceed limits");return}
+	if body.Action=="tool.invoke"&&!oneOf(body.Tool.Risk,"low","medium","high","critical"){writeError(w,422,"validation_error","Tool risk must be low, medium, high, or critical");return}
+	p:=principal(r)
+	input:=map[string]any{
+		"action":body.Action,
+		"actor":map[string]any{"tenant_id":p.TenantID,"id":p.KeyID,"role":p.Role},
+		"resource":map[string]any{"tenant_id":p.TenantID,"type":body.ResourceType,"id":body.ResourceID},
+		"tool":map[string]any{"name":body.Tool.Name,"risk":body.Tool.Risk,"schema_hash":body.Tool.SchemaHash,"approved_schema_hash":body.Tool.ApprovedSchemaHash},
+		"approval":map[string]any{"required":body.Approval.Required},
+	}
+	decision,err:=a.evaluator.Evaluate(r.Context(),input)
+	if err!=nil{writeError(w,503,"policy_unavailable","Policy evaluation unavailable; request was not authorized");return}
+	if err=a.store.RecordPolicyDecision(r.Context(),p,body.Action,decision.Effect,decision.RuleID,decision.Reason);err!=nil{writeError(w,500,"audit_failed","Policy decision could not be durably audited");return}
+	writeJSON(w,200,decision)
 }
 func (a *API) summary(w http.ResponseWriter,r *http.Request){v,err:=a.store.Summary(r.Context(),principal(r).TenantID);if err!=nil{writeError(w,500,"query_failed","Unable to load dashboard summary");return};writeJSON(w,200,v)}
 func (a *API) identities(w http.ResponseWriter,r *http.Request){limit:=queryLimit(r,100,500);v,err:=a.store.ListIdentities(r.Context(),principal(r).TenantID,limit);if err!=nil{writeError(w,500,"query_failed","Unable to load identity inventory");return};writeJSON(w,200,map[string]any{"items":v,"limit":limit})}
