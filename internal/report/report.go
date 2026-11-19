@@ -40,7 +40,12 @@ func safeServers(in []model.Server) []model.Server {
 	out := make([]model.Server, len(in))
 	for i, s := range in {
 		out[i] = s
+		out[i].Command = ""
+		out[i].Args = nil
+		out[i].URL = ""
 		out[i].Env = nil
+		out[i].Tools = nil
+		out[i].Metadata = nil
 	}
 	return out
 }
