@@ -43,7 +43,9 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
 | Method | Route | Roles | Purpose |
 |---|---|---|---|
 | POST | /v1/ingest/scans | owner, admin, ingest | Ingest a scan snapshot |
-| POST | /v1/policies/evaluate | owner, admin, analyst | Evaluate a policy through OPA; unavailable policy service fails closed |
+| POST | /v1/policies/evaluate | owner, admin, analyst | Evaluate against tenant-approved server-side tool baselines; unavailable policy service fails closed |
+| GET | /v1/tool-baselines | owner, admin, analyst, viewer | List approved tool schema baselines |
+| PUT | /v1/tool-baselines/{name} | owner, admin | Approve/update schema hash and risk classification |
 | GET | /v1/identities/{id}/events | owner, admin, analyst, viewer | Identity drift timeline |
 | GET | /v1/audit-events/verify | owner, admin | Verify tenant audit hash chain |
 | GET | /v1/dashboard/summary | owner, admin, analyst, viewer | Tenant KPI summary |
