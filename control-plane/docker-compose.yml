@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: agentguard
+      POSTGRES_USER: agentguard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - agentguard-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentguard -d agentguard"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  control-plane:
+    build: .
+    environment:
+      AG_DATABASE_URL: postgres://agentguard:${POSTGRES_PASSWORD}@postgres:5432/agentguard?sslmode=disable
+      AG_API_KEY_PEPPER: ${AG_API_KEY_PEPPER:?Set a random 32+ character pepper}
+      AG_LISTEN_ADDR: :8080
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  agentguard-postgres:
