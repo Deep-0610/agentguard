@@ -53,7 +53,10 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
 | GET | /v1/identities | owner, admin, analyst, viewer | Risk-ranked identity inventory |
 | GET | /v1/relationships | owner, admin, analyst, viewer | Tenant-scoped identity graph edges |
 | GET | /v1/findings | owner, admin, analyst, viewer | Findings with optional status filter |
-| PATCH | /v1/findings/{id}/status | owner, admin, analyst | Update finding workflow status |\n| GET | /v1/findings/{id}/events | owner, admin, analyst, viewer | Finding triage history |\n| POST | /v1/findings/{id}/suppress | owner, admin | Temporarily suppress a finding with reason and expiry |\n| DELETE | /v1/findings/{id}/suppress | owner, admin | Clear a suppression with reason |
+| PATCH | /v1/findings/{id}/status | owner, admin, analyst | Update finding workflow status |
+| GET | /v1/findings/{id}/events | owner, admin, analyst, viewer | Finding triage history |
+| POST | /v1/findings/{id}/suppress | owner, admin | Temporarily suppress a finding with reason and expiry |
+| DELETE | /v1/findings/{id}/suppress | owner, admin | Clear a suppression with reason |
 | GET | /v1/audit-events | owner, admin, analyst | Tenant audit history |
 | GET | /v1/api-keys | owner, admin | List key metadata; never secrets |
 | POST | /v1/api-keys | owner, admin | Create a scoped key; secret shown once |
