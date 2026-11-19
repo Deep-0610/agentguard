@@ -63,3 +63,16 @@ func TestAssessAssetFlagsStaleAPIToken(t *testing.T) {
 	score,findings:=assessAsset(asset)
 	if score!=55||len(findings)!=1||findings[0].RuleID!="nhi.stale-api-token" { t.Fatalf("unexpected stale-token assessment: score=%d findings=%#v",score,findings) }
 }
+
+func TestRedactUntrustedRemovesCredentialValues(t *testing.T) {
+	input:="token=supersecretvalue https://alice:verysecret@example.test/mcp ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+	got:=redactUntrusted(input)
+	for _,secret:=range []string{"supersecretvalue","verysecret","ghp_abcdefghijklmnopqrstuvwxyz1234567890"} {
+		if strings.Contains(got,secret) { t.Fatalf("credential survived redaction: %q",got) }
+	}
+}
+func TestRedactUntrustedRemovesCompletePrivateKey(t *testing.T) {
+	input:="-----BEGIN PRIVATE KEY-----\nprivate-material\n-----END PRIVATE KEY-----"
+	got:=redactUntrusted(input)
+	if strings.Contains(got,"private-material") { t.Fatalf("private key body survived redaction: %q",got) }
+}
