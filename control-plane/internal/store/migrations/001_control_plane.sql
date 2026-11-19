@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS identities (
  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
  UNIQUE (tenant_id, external_key),
+ UNIQUE (tenant_id, id),
  FOREIGN KEY (tenant_id, last_scan_id) REFERENCES scans(tenant_id, id)
 );
 CREATE INDEX IF NOT EXISTS identities_tenant_kind_idx ON identities(tenant_id, kind);
