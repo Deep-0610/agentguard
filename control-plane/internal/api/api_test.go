@@ -76,3 +76,13 @@ func TestRedactUntrustedRemovesCompletePrivateKey(t *testing.T) {
 	got:=redactUntrusted(input)
 	if strings.Contains(got,"private-material") { t.Fatalf("private key body survived redaction: %q",got) }
 }
+
+func TestRequestIDRejectsControlCharacters(t *testing.T) {
+	handler:=requestID(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){}))
+	req:=httptest.NewRequest(http.MethodGet,"/",nil)
+	req.Header.Set("X-Request-ID","valid\x1b[31m-injected")
+	rr:=httptest.NewRecorder()
+	handler.ServeHTTP(rr,req)
+	got:=rr.Header().Get("X-Request-ID")
+	if strings.ContainsAny(got,"\x1b\r\n") { t.Fatalf("unsafe request ID survived: %q",got) }
+}
