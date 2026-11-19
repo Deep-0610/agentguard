@@ -67,7 +67,8 @@ func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 		if a.OwnerStatus==""{a.OwnerStatus="UNKNOWN"}
 		if !oneOf(a.OwnerStatus,"ACTIVE","SUSPENDED","UNKNOWN"){writeError(w,422,"validation_error","Unsupported owner status");return}
 		if a.SecretAgeDays<0||len(a.Scopes)>256{writeError(w,422,"validation_error","Secret age cannot be negative and scopes are limited to 256");return}
-		a.RiskScore,generated:=assessAsset(*a)
+		score,generated:=assessAsset(*a)
+		a.RiskScore=score
 		assessedFindings=append(assessedFindings,generated...)
 	}
 	req.Findings=append(req.Findings,assessedFindings...)
