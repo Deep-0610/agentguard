@@ -60,7 +60,8 @@ func (a *API) ready(w http.ResponseWriter,r *http.Request){if err:=a.store.Ping(
 func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 	var req store.ScanRequest
 	raw,err:=readJSON(w,r,&req,8<<20);if err!=nil{writeError(w,400,"invalid_request",err.Error());return}
-	if strings.TrimSpace(req.ScanID)==""||len(req.ScanID)>128||strings.TrimSpace(req.Source)==""||len(req.Source)>64{writeError(w,422,"validation_error","scan_id and source are required and must be within documented limits");return}
+	if strings.TrimSpace(req.ScanID)==""||len(req.ScanID)>128||strings.TrimSpace(req.Source)==""||len(req.Source)>64||len(req.ScannerVersion)>80{writeError(w,422,"validation_error","scan_id and source are required and must be within documented limits");return}
+	req.ScanID=redactUntrusted(req.ScanID);req.Source=redactUntrusted(req.Source);req.ScannerVersion=redactUntrusted(req.ScannerVersion)
 	if req.CollectedAt.IsZero(){req.CollectedAt=time.Now().UTC()}
 	if req.CollectedAt.After(time.Now().Add(5*time.Minute)){writeError(w,422,"validation_error","collected_at cannot be more than five minutes in the future");return}
 	if len(req.Assets)>10000||len(req.Findings)>20000||len(req.Relationships)>20000{writeError(w,413,"limit_exceeded","A scan may contain at most 10,000 assets, 20,000 findings and 20,000 relationships");return}
@@ -81,14 +82,14 @@ func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 	}
 	req.Findings=append(req.Findings,assessedFindings...)
 	if len(req.Findings)>20000{writeError(w,413,"limit_exceeded","Generated risk findings exceed the 20,000 finding limit");return}
-	for i:=range req.Relationships{rel:=&req.Relationships[i];if rel.FromSource==""||rel.ToSource==""||rel.FromExternalID==""||rel.ToExternalID==""||len(rel.FromExternalID)>512||len(rel.ToExternalID)>512||len(rel.Evidence)>1024||!oneOf(rel.Type,"uses","accesses","delegates_to","created_by","connected_to","owns"){writeError(w,422,"validation_error","Relationship endpoints, type or evidence are invalid");return};rel.Evidence=redactUntrusted(rel.Evidence)}
+	for i:=range req.Relationships{rel:=&req.Relationships[i];if rel.FromSource==""||rel.ToSource==""||rel.FromExternalID==""||rel.ToExternalID==""||len(rel.FromExternalID)>512||len(rel.ToExternalID)>512||len(rel.Evidence)>1024||!oneOf(rel.Type,"uses","accesses","delegates_to","created_by","connected_to","owns"){writeError(w,422,"validation_error","Relationship endpoints, type or evidence are invalid");return};rel.FromSource=redactUntrusted(rel.FromSource);rel.FromExternalID=redactUntrusted(rel.FromExternalID);rel.ToSource=redactUntrusted(rel.ToSource);rel.ToExternalID=redactUntrusted(rel.ToExternalID);rel.Evidence=redactUntrusted(rel.Evidence)}
 	for i:=range req.Findings{
 		f:=&req.Findings[i]
 		if strings.TrimSpace(f.Title)==""||len(f.Title)>512||!oneOf(f.Severity,"critical","high","medium","low","info"){writeError(w,422,"validation_error","Every finding requires a title and a valid severity");return}
 		if f.Confidence==""{f.Confidence="medium"}
 		if !oneOf(f.Confidence,"low","medium","high"){writeError(w,422,"validation_error","Finding confidence must be low, medium, or high");return}
 		if f.Fingerprint==""||len(f.Fingerprint)>256||len(f.RuleID)>128||len(f.Category)>128||len(f.Description)>4000||len(f.Resource)>512||len(f.Location)>512||len(f.Evidence)>4096||len(f.Remediation)>4000{writeError(w,422,"validation_error","Finding fields exceed their documented limits");return}
-		f.Title=redactUntrusted(f.Title);f.Description=redactUntrusted(f.Description);f.Resource=redactUntrusted(f.Resource);f.Location=redactUntrusted(f.Location);f.Evidence=redactUntrusted(f.Evidence);f.Remediation=redactUntrusted(f.Remediation);f.Category=redactUntrusted(f.Category)
+		f.Fingerprint=redactUntrusted(f.Fingerprint);f.RuleID=redactUntrusted(f.RuleID);f.Title=redactUntrusted(f.Title);f.Description=redactUntrusted(f.Description);f.Resource=redactUntrusted(f.Resource);f.Location=redactUntrusted(f.Location);f.Evidence=redactUntrusted(f.Evidence);f.Remediation=redactUntrusted(f.Remediation);f.Category=redactUntrusted(f.Category)
 	}
 	hash:=sha256.Sum256(raw)
 	result,err:=a.store.Ingest(r.Context(),principal(r),req,hex.EncodeToString(hash[:]))
@@ -164,6 +165,7 @@ func (a *API) createKey(w http.ResponseWriter,r *http.Request){
 		if err!=nil||!parsed.After(time.Now()){writeError(w,422,"validation_error","expires_at must be a future RFC3339 timestamp");return}
 		expires=&parsed
 	}
+	body.Name=redactUntrusted(body.Name)
 	key,secret,err:=a.store.CreateAPIKey(r.Context(),principal(r),body.Name,body.Role,expires)
 	if err!=nil{writeError(w,422,"validation_error",err.Error());return}
 	writeJSON(w,201,map[string]any{"key":key,"secret":secret,"warning":"Copy this secret now. It cannot be retrieved again."})
