@@ -65,6 +65,7 @@ paths:
                 properties:
                   identities: { type: integer }
                   open_findings: { type: integer }
+                  suppressed_findings: { type: integer }
                   critical_findings: { type: integer }
                   orphaned_identities: { type: integer }
                   scans_24h: { type: integer }
@@ -110,6 +111,64 @@ paths:
       responses:
         "200":
           description: Findings ordered by severity
+  /v1/findings/{id}/events:
+    get:
+      summary: Finding status and triage history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Tenant-scoped finding workflow events
+  /v1/findings/{id}/suppress:
+    post:
+      summary: Temporarily suppress a finding
+      description: Owner/admin only. Requires a reason and expiry within 90 days. Suppression is audited and does not delete or change the finding status.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, expires_at]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Finding suppressed
+        "422":
+          description: Invalid reason or expiry
+    delete:
+      summary: Clear a finding suppression
+      description: Owner/admin only. A reason is required and the action is audited.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "200":
+          description: Suppression cleared
+        "409":
+          description: Finding is not currently suppressed
   /v1/findings/{id}/status:
     patch:
       summary: Update finding workflow status
