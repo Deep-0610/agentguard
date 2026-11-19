@@ -59,3 +59,7 @@ jobs:
         run: go build ./...
       - name: Database migration smoke test
         run: go run ./cmd/controlplane migrate
+      - name: Validate OPA policy syntax and unit tests
+        run: |
+          docker run --rm -v "$PWD/policies:/policies:ro" openpolicyagent/opa:1.4.2 check /policies
+          docker run --rm -v "$PWD/policies:/policies:ro" openpolicyagent/opa:1.4.2 test /policies -v
