@@ -77,14 +77,14 @@ func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 		if !oneOf(a.OwnerStatus,"ACTIVE","SUSPENDED","UNKNOWN"){writeError(w,422,"validation_error","Unsupported owner status");return}
 		if a.SecretAgeDays<0||len(a.Scopes)>256{writeError(w,422,"validation_error","Secret age cannot be negative and scopes are limited to 256");return}
 		a.Name=redactUntrusted(a.Name);a.Source=redactUntrusted(a.Source);a.ExternalID=redactUntrusted(a.ExternalID);a.OwnerEmail=redactUntrusted(a.OwnerEmail);a.Environment=redactUntrusted(a.Environment)
-		for j:=range a.Scopes{a.Scopes[j]=redactUntrusted(a.Scopes[j])}
+		for j:=range a.Scopes{if len(a.Scopes[j])>256{writeError(w,422,"validation_error","Each scope is limited to 256 characters");return};a.Scopes[j]=redactUntrusted(a.Scopes[j])}
 		score,generated:=assessAsset(*a)
 		a.RiskScore=score
 		assessedFindings=append(assessedFindings,generated...)
 	}
 	req.Findings=append(req.Findings,assessedFindings...)
 	if len(req.Findings)>20000{writeError(w,413,"limit_exceeded","Generated risk findings exceed the 20,000 finding limit");return}
-	for i:=range req.Relationships{rel:=&req.Relationships[i];if rel.FromSource==""||rel.ToSource==""||rel.FromExternalID==""||rel.ToExternalID==""||len(rel.FromExternalID)>512||len(rel.ToExternalID)>512||len(rel.Evidence)>1024||!oneOf(rel.Type,"uses","accesses","delegates_to","created_by","connected_to","owns"){writeError(w,422,"validation_error","Relationship endpoints, type or evidence are invalid");return};rel.FromSource=redactUntrusted(rel.FromSource);rel.FromExternalID=redactUntrusted(rel.FromExternalID);rel.ToSource=redactUntrusted(rel.ToSource);rel.ToExternalID=redactUntrusted(rel.ToExternalID);rel.Evidence=redactUntrusted(rel.Evidence)}
+	for i:=range req.Relationships{rel:=&req.Relationships[i];if rel.FromSource==""||rel.ToSource==""||rel.FromExternalID==""||rel.ToExternalID==""||len(rel.FromSource)>64||len(rel.ToSource)>64||len(rel.FromExternalID)>512||len(rel.ToExternalID)>512||len(rel.Evidence)>1024||!oneOf(rel.Type,"uses","accesses","delegates_to","created_by","connected_to","owns"){writeError(w,422,"validation_error","Relationship endpoints, type or evidence are invalid");return};rel.FromSource=redactUntrusted(rel.FromSource);rel.FromExternalID=redactUntrusted(rel.FromExternalID);rel.ToSource=redactUntrusted(rel.ToSource);rel.ToExternalID=redactUntrusted(rel.ToExternalID);rel.Evidence=redactUntrusted(rel.Evidence)}
 	for i:=range req.Findings{
 		f:=&req.Findings[i]
 		if strings.TrimSpace(f.Title)==""||len(f.Title)>512||!oneOf(f.Severity,"critical","high","medium","low","info"){writeError(w,422,"validation_error","Every finding requires a title and a valid severity");return}
