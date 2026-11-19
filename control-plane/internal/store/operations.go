@@ -95,13 +95,13 @@ func (s *Store) ListIdentities(ctx context.Context,tenant string,limit int)([]ma
 	};return out,rows.Err()
 }
 func (s *Store) ListFindings(ctx context.Context,tenant,status string,limit int)([]map[string]any,error){
-	query:=`SELECT id::text,fingerprint,rule_id,severity,confidence,category,title,description,resource,location,evidence,remediation,status,first_seen_at,last_seen_at,occurrences FROM findings WHERE tenant_id=$1`
+	query:=`SELECT id::text,fingerprint,rule_id,severity,confidence,category,title,description,resource,location,evidence,remediation,status,first_seen_at,last_seen_at,occurrences,suppression_reason,suppression_expires_at FROM findings WHERE tenant_id=$1`
 	args:=[]any{tenant};if status!=""{query+=` AND status=$2`;args=append(args,status)}
 	query+=fmt.Sprintf(" ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,last_seen_at DESC LIMIT $%d",len(args)+1);args=append(args,limit)
 	rows,err:=s.db.QueryContext(ctx,query,args...);if err!=nil{return nil,err};defer rows.Close();out:=[]map[string]any{}
-	for rows.Next(){var id,fp,rule,severity,confidence,category,title,description,resource,location,evidence,remediation,state string;var first,last time.Time;var occurrences int64
-		if err=rows.Scan(&id,&fp,&rule,&severity,&confidence,&category,&title,&description,&resource,&location,&evidence,&remediation,&state,&first,&last,&occurrences);err!=nil{return nil,err}
-		out=append(out,map[string]any{"id":id,"fingerprint":fp,"rule_id":rule,"severity":severity,"confidence":confidence,"category":category,"title":title,"description":description,"resource":resource,"location":location,"evidence":evidence,"remediation":remediation,"status":state,"first_seen_at":first,"last_seen_at":last,"occurrences":occurrences})
+	for rows.Next(){var id,fp,rule,severity,confidence,category,title,description,resource,location,evidence,remediation,state string;var first,last time.Time;var occurrences int64;var suppressionReason sql.NullString;var suppressionExpires sql.NullTime
+		if err=rows.Scan(&id,&fp,&rule,&severity,&confidence,&category,&title,&description,&resource,&location,&evidence,&remediation,&state,&first,&last,&occurrences,&suppressionReason,&suppressionExpires);err!=nil{return nil,err}
+		out=append(out,map[string]any{"id":id,"fingerprint":fp,"rule_id":rule,"severity":severity,"confidence":confidence,"category":category,"title":title,"description":description,"resource":resource,"location":location,"evidence":evidence,"remediation":remediation,"status":state,"first_seen_at":first,"last_seen_at":last,"occurrences":occurrences,"suppression_reason":suppressionReason.String,"suppression_expires_at":nullableTime(suppressionExpires)})
 	};return out,rows.Err()
 }
 func (s *Store) ListAudit(ctx context.Context,tenant string,limit int)([]map[string]any,error){
@@ -123,4 +123,45 @@ func (s *Store) SetFindingStatus(ctx context.Context,p Principal,id,status,reaso
 	if _,err=tx.ExecContext(ctx,`INSERT INTO finding_events(tenant_id,finding_id,actor,previous_status,new_status,reason) VALUES($1,$2,$3,$4,$5,$6)`,p.TenantID,id,p.KeyID,old,status,reason);err!=nil{return err}
 	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"finding.status_changed","finding",id,p.RequestID,map[string]any{"from":old,"to":status,"reason":reason});err!=nil{return err}
 	return tx.Commit()
+}
+
+
+func nullableTime(v sql.NullTime) any {
+	if !v.Valid { return nil }
+	return v.Time
+}
+
+func (s *Store) SetFindingSuppression(ctx context.Context,p Principal,id,reason string,expiresAt time.Time) error {
+	reason=strings.TrimSpace(reason)
+	if reason==""||len(reason)>1000 { return fmt.Errorf("suppression reason is required and must be at most 1000 characters") }
+	now:=time.Now().UTC()
+	if !expiresAt.After(now)||expiresAt.After(now.Add(90*24*time.Hour)) { return fmt.Errorf("suppression expiry must be within the next 90 days") }
+	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return err};defer tx.Rollback()
+	var title string
+	err=tx.QueryRowContext(ctx,`SELECT title FROM findings WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,p.TenantID,id).Scan(&title)
+	if err==sql.ErrNoRows{return ErrNotFound};if err!=nil{return err}
+	if _,err=tx.ExecContext(ctx,`UPDATE findings SET suppression_reason=$3,suppression_expires_at=$4,updated_at=now() WHERE tenant_id=$1 AND id=$2`,p.TenantID,id,reason,expiresAt);err!=nil{return err}
+	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"finding.suppressed","finding",id,p.RequestID,map[string]any{"reason":reason,"expires_at":expiresAt.UTC()});err!=nil{return err}
+	return tx.Commit()
+}
+
+func (s *Store) ClearFindingSuppression(ctx context.Context,p Principal,id,reason string) error {
+	reason=strings.TrimSpace(reason)
+	if reason==""||len(reason)>1000{return fmt.Errorf("unsuppression reason is required and must be at most 1000 characters")}
+	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return err};defer tx.Rollback()
+	var previous sql.NullString
+	err=tx.QueryRowContext(ctx,`SELECT suppression_reason FROM findings WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,p.TenantID,id).Scan(&previous)
+	if err==sql.ErrNoRows{return ErrNotFound};if err!=nil{return err}
+	if !previous.Valid{return fmt.Errorf("finding is not currently suppressed")}
+	if _,err=tx.ExecContext(ctx,`UPDATE findings SET suppression_reason=NULL,suppression_expires_at=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`,p.TenantID,id);err!=nil{return err}
+	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"finding.unsuppressed","finding",id,p.RequestID,map[string]any{"previous_reason":previous.String,"reason":reason});err!=nil{return err}
+	return tx.Commit()
+}
+
+func (s *Store) ListFindingEvents(ctx context.Context,tenant,id string,limit int)([]map[string]any,error){
+	rows,err:=s.db.QueryContext(ctx,`SELECT e.actor,e.previous_status,e.new_status,e.reason,e.created_at FROM finding_events e JOIN findings f ON f.tenant_id=e.tenant_id AND f.id=e.finding_id WHERE e.tenant_id=$1 AND e.finding_id=$2 ORDER BY e.created_at DESC LIMIT $3`,tenant,id,limit)
+	if err!=nil{return nil,err};defer rows.Close()
+	out:=[]map[string]any{}
+	for rows.Next(){var actor,previous,next,reason string;var at time.Time;if err=rows.Scan(&actor,&previous,&next,&reason,&at);err!=nil{return nil,err};out=append(out,map[string]any{"actor":actor,"previous_status":previous,"new_status":next,"reason":reason,"created_at":at})}
+	return out,rows.Err()
 }
