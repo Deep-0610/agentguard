@@ -37,6 +37,17 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	identityRows,err:=s.ListIdentities(ctx,tenantA,10);if err!=nil{t.Fatal(err)};if len(identityRows)==0{t.Fatal("expected identities after ingestion")};identityID,ok:=identityRows[0]["id"].(string);if !ok||identityID==""{t.Fatalf("invalid identity row: %#v",identityRows[0])};identityEvents,err:=s.ListIdentityEvents(ctx,tenantA,identityID,10)
 	if err!=nil{t.Fatal(err)}
 	if len(identityEvents)==0{t.Fatal("expected identity drift history after owner state changed")}
+	var findingID string
+	if err=s.db.QueryRowContext(ctx,`SELECT id::text FROM findings WHERE tenant_id=$1 AND fingerprint=$2`,tenantA,"fp-"+suffix).Scan(&findingID);err!=nil{t.Fatal(err)}
+	if err=s.SetFindingSuppression(ctx,principalA,findingID,"Known test fixture; tracked for remediation",time.Now().Add(7*24*time.Hour));err!=nil{t.Fatal(err)}
+	findings,err:=s.ListFindings(ctx,tenantA,"",100);if err!=nil{t.Fatal(err)}
+	foundSuppressed:=false
+	for _,finding:=range findings{if finding["id"]==findingID&&finding["is_suppressed"]==true{foundSuppressed=true}}
+	if !foundSuppressed{t.Fatal("expected finding to be actively suppressed")}
+	if err=s.SetFindingSuppression(ctx,principalA,findingID,"invalid",time.Now().Add(100*24*time.Hour));err==nil{t.Fatal("expected suppression expiry beyond 90 days to be rejected")}
+	if err=s.ClearFindingSuppression(ctx,principalA,findingID,"False positive fixed; re-opened for review");err!=nil{t.Fatal(err)}
+	findings,err=s.ListFindings(ctx,tenantA,"",100);if err!=nil{t.Fatal(err)}
+	for _,finding:=range findings{if finding["id"]==findingID&&finding["is_suppressed"]==true{t.Fatal("finding remained suppressed after clearing")}}
 	audit,err:=s.VerifyAuditChain(ctx,tenantA);if err!=nil{t.Fatal(err)}
 	if !audit.Valid||audit.EventsChecked<3{t.Fatalf("audit chain failed verification: %+v",audit)}
 	relationships,err:=s.ListRelationships(ctx,tenantA,10);if err!=nil{t.Fatal(err)}
