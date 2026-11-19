@@ -40,7 +40,7 @@ type AssetInput struct {
 	OwnerStatus string `json:"owner_status,omitempty"`
 	Environment string `json:"environment,omitempty"`
 	Scopes []string `json:"scopes,omitempty"`
-	RiskScore int `json:"risk_score,omitempty"`
+	RiskScore int `json:"-"`
 	Verified bool `json:"verified,omitempty"`
 	SecretAgeDays int `json:"secret_age_days,omitempty"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
