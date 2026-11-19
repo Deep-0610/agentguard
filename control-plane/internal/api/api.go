@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,31 @@ import (
 
 type API struct { store *store.Store; logger *log.Logger; evaluator *policy.Evaluator }
 type principalKey struct{}
+var requestIDPattern=regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}package api
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/Deep-0610/agentguard/control-plane/internal/store"
+	"github.com/Deep-0610/agentguard/control-plane/internal/policy"
+)
+
+type API struct { store *store.Store; logger *log.Logger; evaluator *policy.Evaluator }
+)
 type requestIDKey struct{}
 
 func New(s *store.Store,logger *log.Logger)*API{return &API{store:s,logger:logger,evaluator:policy.New(os.Getenv("AG_OPA_URL"))}}
@@ -189,7 +215,7 @@ func writeError(w http.ResponseWriter,status int,code,message string){writeJSON(
 func queryLimit(r *http.Request,def,max int)int{v:=r.URL.Query().Get("limit");if v==""{return def};n,err:=strconv.Atoi(v);if err!=nil||n<1{return def};if n>max{return max};return n}
 func oneOf(v string,values ...string)bool{for _,x:=range values{if v==x{return true}};return false}
 func requestID(next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
-	id:=r.Header.Get("X-Request-ID");if len(id)>64||strings.ContainsAny(id,"\r\n"){id=""};if id==""{id=fmt.Sprintf("%d",time.Now().UnixNano())}
+	id:=r.Header.Get("X-Request-ID");if !requestIDPattern.MatchString(id){id=fmt.Sprintf("%d",time.Now().UnixNano())}
 	w.Header().Set("X-Request-ID",id);next.ServeHTTP(w,r.WithContext(context.WithValue(r.Context(),requestIDKey{},id)))
 })}
 func requestIDFrom(r *http.Request)string{v,_:=r.Context().Value(requestIDKey{}).(string);return v}
