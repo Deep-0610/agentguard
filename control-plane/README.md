@@ -25,11 +25,12 @@ cd control-plane
 cp .env.example .env
 # Replace both passwords with unique random values.
 set -a && . ./.env && set +a
-docker compose up -d postgres
+docker compose up -d postgres opa
 go mod tidy
 go run ./cmd/controlplane migrate
 go run ./cmd/controlplane bootstrap --organization "Example Security"
 # Copy the one-time owner API key into a secret manager.
+export AG_OPA_URL=http://localhost:8181
 go run ./cmd/controlplane serve
 ```
 
