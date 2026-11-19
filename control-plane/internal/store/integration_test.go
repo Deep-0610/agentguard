@@ -22,9 +22,9 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	principalA,err:=s.Authenticate(ctx,keyA);if err!=nil{t.Fatal(err)}
 	principalB,err:=s.Authenticate(ctx,keyB);if err!=nil{t.Fatal(err)}
 	if principalA.TenantID!=tenantA||principalB.TenantID!=tenantB{t.Fatal("API key resolved to wrong tenant")}
-	req:=ScanRequest{ScanID:"integration-"+suffix,Source:"test",CollectedAt:time.Now().UTC(),Assets:[]AssetInput{{ExternalID:"mcp:test",Source:"mcp",Kind:"mcp_server",Name:"test-server",OwnerStatus:"UNKNOWN"}},Findings:[]FindingInput{{Fingerprint:"fp-"+suffix,RuleID:"test.rule",Severity:"high",Confidence:"high",Category:"test",Title:"Test finding"}}}
+	req:=ScanRequest{ScanID:"integration-"+suffix,Source:"test",CollectedAt:time.Now().UTC(),Assets:[]AssetInput{{ExternalID:"mcp:test",Source:"mcp",Kind:"mcp_server",Name:"test-server",OwnerStatus:"UNKNOWN"},{ExternalID:"app:helper",Source:"github",Kind:"oauth_app",Name:"helper-app",OwnerStatus:"ACTIVE",Verified:true}},Relationships:[]RelationshipInput{{FromSource:"mcp",FromExternalID:"mcp:test",ToSource:"github",ToExternalID:"app:helper",Type:"uses"}},Findings:[]FindingInput{{Fingerprint:"fp-"+suffix,RuleID:"test.rule",Severity:"high",Confidence:"high",Category:"test",Title:"Test finding"}}}
 	ingested,err:=s.Ingest(ctx,principalA,req,"payload-"+suffix);if err!=nil{t.Fatal(err)}
-	if ingested.AssetsUpserted!=1||ingested.FindingsUpserted!=1{t.Fatalf("unexpected ingest result: %+v",ingested)}
+	if ingested.AssetsUpserted!=2||ingested.FindingsUpserted!=1||ingested.RelationshipsUpserted!=1{t.Fatalf("unexpected ingest result: %+v",ingested)}
 	updated:=req
 	updated.ScanID="integration-drift-"+suffix
 	updated.Assets=[]AssetInput{{ExternalID:"mcp:test",Source:"mcp",Kind:"mcp_server",Name:"test-server",OwnerStatus:"ACTIVE",Scopes:[]string{"read"}}}
@@ -34,9 +34,11 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	if len(identityEvents)==0{t.Fatal("expected identity drift history after owner state changed")}
 	audit,err:=s.VerifyAuditChain(ctx,tenantA);if err!=nil{t.Fatal(err)}
 	if !audit.Valid||audit.EventsChecked<3{t.Fatalf("audit chain failed verification: %+v",audit)}
+	relationships,err:=s.ListRelationships(ctx,tenantA,10);if err!=nil{t.Fatal(err)}
+	if len(relationships)!=1{t.Fatalf("expected one tenant identity relationship, got %d",len(relationships))}
 	summaryA,err:=s.Summary(ctx,tenantA);if err!=nil{t.Fatal(err)}
 	summaryB,err:=s.Summary(ctx,tenantB);if err!=nil{t.Fatal(err)}
-	if summaryA["identities"].(int64)!=1||summaryA["open_findings"].(int64)!=1{t.Fatalf("tenant A did not receive ingested records: %#v",summaryA)}
+	if summaryA["identities"].(int64)!=2||summaryA["open_findings"].(int64)!=1{t.Fatalf("tenant A did not receive ingested records: %#v",summaryA)}
 	if summaryB["identities"].(int64)!=0||summaryB["open_findings"].(int64)!=0{t.Fatalf("tenant B can see tenant A records: %#v",summaryB)}
 	duplicate,err:=s.Ingest(ctx,principalA,req,"payload-"+suffix);if err!=nil{t.Fatal(err)}
 	if !duplicate.Duplicate{t.Fatal("expected identical scan ingestion to be idempotent")}
