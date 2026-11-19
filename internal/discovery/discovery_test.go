@@ -44,3 +44,28 @@ func TestLoadRejectsMalformedServerEntries(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"mcpServers":{"bad":{"args":"not-an-array"}}}`), 0600); err != nil { t.Fatal(err) }
 	if _, err := Load([]string{path}); err == nil { t.Fatal("expected malformed server entry to fail") }
 }
+
+func TestLoadRejectsDuplicateJSONKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.json")
+	data := []byte(`{"mcpServers":{"first":{"command":"node"}},"mcpServers":{"second":{"command":"python"}}}`)
+	if err := os.WriteFile(path, data, 0600); err != nil { t.Fatal(err) }
+	if _, err := Load([]string{path}); err == nil { t.Fatal("expected duplicate top-level keys to be rejected") }
+}
+
+func TestLoadRejectsExcessiveJSONNesting(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.json")
+	data := []byte(strings.Repeat("[", 130) + "0" + strings.Repeat("]", 130))
+	if err := os.WriteFile(path, data, 0600); err != nil { t.Fatal(err) }
+	if _, err := Load([]string{path}); err == nil { t.Fatal("expected excessive JSON nesting to be rejected") }
+}
+
+func FuzzValidateJSON(f *testing.F) {
+	f.Add([]byte(`{"mcpServers":{}}`))
+	f.Add([]byte(`{"servers":{"x":{"command":"node"}}}`))
+	f.Add([]byte(`{"a":1,"a":2}`))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		_ = validateJSON(data)
+	})
+}
