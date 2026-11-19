@@ -27,7 +27,7 @@ type APIKey struct {
 	Role string `json:"role"`
 	Prefix string `json:"prefix"`
 	CreatedAt time.Time `json:"created_at"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	LastUsedAt *time.Time `json:"-"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
@@ -37,12 +37,12 @@ type AssetInput struct {
 	Kind string `json:"kind"`
 	Name string `json:"name"`
 	OwnerEmail string `json:"owner_email,omitempty"`
-	OwnerStatus string `json:"owner_status,omitempty"`
+	OwnerStatus string `json:"-"`
 	Environment string `json:"environment,omitempty"`
 	Scopes []string `json:"scopes,omitempty"`
 	RiskScore int `json:"-"`
-	Verified bool `json:"verified,omitempty"`
-	SecretAgeDays int `json:"secret_age_days,omitempty"`
+	Verified bool `json:"-"`
+	SecretAgeDays int `json:"-"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 type FindingInput struct {
