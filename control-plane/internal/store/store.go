@@ -43,7 +43,7 @@ type AssetInput struct {
 	RiskScore int `json:"-"`
 	Verified bool `json:"-"`
 	SecretAgeDays int `json:"-"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	LastUsedAt *time.Time `json:"-"`
 }
 type FindingInput struct {
 	Fingerprint string `json:"fingerprint"`
