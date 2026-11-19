@@ -49,6 +49,16 @@ func (s *Store) Ingest(ctx context.Context,p Principal,req ScanRequest,payloadHa
 		_,err=tx.ExecContext(ctx,`INSERT INTO identities(tenant_id,external_key,source,kind,name,owner_email,owner_status,environment,scopes,risk_score,last_scan_id,metadata) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12::jsonb) ON CONFLICT(tenant_id,external_key) DO UPDATE SET source=EXCLUDED.source,kind=EXCLUDED.kind,name=EXCLUDED.name,owner_email=COALESCE(EXCLUDED.owner_email,identities.owner_email),owner_status=EXCLUDED.owner_status,environment=EXCLUDED.environment,scopes=EXCLUDED.scopes,risk_score=EXCLUDED.risk_score,last_seen_at=now(),last_scan_id=EXCLUDED.last_scan_id,metadata=EXCLUDED.metadata,updated_at=now()`,p.TenantID,a.Source+":"+external,a.Source,a.Kind,a.Name,a.OwnerEmail,a.OwnerStatus,a.Environment,a.Scopes,a.RiskScore,scanID,string(meta))
 		if err!=nil{return IngestResult{},err}; if _,err=tx.ExecContext(ctx, `UPDATE identities SET verified=$3,secret_age_days=NULLIF($4,0),last_used_at=$5 WHERE tenant_id=$1 AND external_key=$2`,p.TenantID,a.Source+":"+external,a.Verified,a.SecretAgeDays,a.LastUsedAt);err!=nil{return IngestResult{},err}; result.AssetsUpserted++
 	}
+	for _,rel:=range req.Relationships{
+		var fromID,toID string
+		fromKey:=rel.FromSource+":"+rel.FromExternalID
+		toKey:=rel.ToSource+":"+rel.ToExternalID
+		if err=tx.QueryRowContext(ctx,`SELECT id::text FROM identities WHERE tenant_id=$1 AND external_key=$2`,p.TenantID,fromKey).Scan(&fromID);err!=nil{return IngestResult{},fmt.Errorf("relationship source identity %q not found in tenant inventory",fromKey)}
+		if err=tx.QueryRowContext(ctx,`SELECT id::text FROM identities WHERE tenant_id=$1 AND external_key=$2`,p.TenantID,toKey).Scan(&toID);err!=nil{return IngestResult{},fmt.Errorf("relationship target identity %q not found in tenant inventory",toKey)}
+		_,err=tx.ExecContext(ctx,`INSERT INTO identity_relationships(tenant_id,from_identity_id,to_identity_id,relationship_type,evidence) VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,from_identity_id,to_identity_id,relationship_type) DO UPDATE SET evidence=EXCLUDED.evidence,last_seen_at=now(),updated_at=now()`,p.TenantID,fromID,toID,rel.Type,rel.Evidence)
+		if err!=nil{return IngestResult{},err}
+		result.RelationshipsUpserted++
+	}
 	for _,f:=range req.Findings{
 		if f.Fingerprint==""{return IngestResult{},fmt.Errorf("finding fingerprint is required")}
 		if f.Confidence==""{f.Confidence="medium"}
