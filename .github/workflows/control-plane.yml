@@ -51,6 +51,8 @@ jobs:
         run: gofmt -w .
       - name: Resolve dependencies
         run: go mod tidy
+      - name: Export dependency lockfile for repository pinning
+        run: base64 -w0 go.sum
       - name: Vet
         run: go vet ./...
       - name: Unit and race tests
