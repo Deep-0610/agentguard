@@ -44,6 +44,9 @@ func (a *API) Handler()http.Handler{
 	mux.Handle("GET /v1/api-keys",a.auth(http.HandlerFunc(a.listKeys),"owner","admin"))
 	mux.Handle("POST /v1/api-keys",a.auth(http.HandlerFunc(a.createKey),"owner","admin"))
 	mux.Handle("DELETE /v1/api-keys/{id}",a.auth(http.HandlerFunc(a.revokeKey),"owner","admin"))
+	mux.Handle("GET /v1/mfa/status",a.auth(http.HandlerFunc(a.mfaStatus),"owner","admin"))
+	mux.Handle("POST /v1/mfa/totp/enroll",a.auth(http.HandlerFunc(a.enrollTOTP),"owner","admin"))
+	mux.Handle("POST /v1/mfa/totp/verify",a.auth(http.HandlerFunc(a.verifyTOTP),"owner","admin"))
 	return securityHeaders(requestID(recoverer(a.logger,mux)))
 }
 func (a *API) auth(next http.Handler,roles ...string)http.Handler{
@@ -194,10 +197,38 @@ func (a *API) createKey(w http.ResponseWriter,r *http.Request){
 	if err!=nil{writeError(w,422,"validation_error",err.Error());return}
 	writeJSON(w,201,map[string]any{"key":key,"secret":secret,"warning":"Copy this secret now. It cannot be retrieved again."})
 }
+func (a *API) mfaStatus(w http.ResponseWriter,r *http.Request){
+	enabled,err:=a.store.MFAStatus(r.Context(),principal(r))
+	if err!=nil{writeError(w,500,"mfa_status_failed","Unable to load MFA status");return}
+	writeJSON(w,200,map[string]any{"totp_enabled":enabled})
+}
+func (a *API) enrollTOTP(w http.ResponseWriter,r *http.Request){
+	p:=principal(r)
+	secret,err:=a.store.BeginTOTPEnrollment(r.Context(),p)
+	if err!=nil{writeError(w,409,"mfa_enrollment_unavailable",err.Error());return}
+	writeJSON(w,201,map[string]any{
+		"secret":secret,
+		"otpauth_url":store.TOTPProvisioningURI("AgentGuard",p.Name,secret),
+		"warning":"This enrollment secret is shown once. Add it to an authenticator app, then verify a current six-digit code.",
+	})
+}
+func (a *API) verifyTOTP(w http.ResponseWriter,r *http.Request){
+	var body struct{Code string `json:"code"`}
+	if _,err:=readJSON(w,r,&body,8<<10);err!=nil{writeError(w,400,"invalid_request",err.Error());return}
+	err:=a.store.ConfirmTOTP(r.Context(),principal(r),body.Code)
+	if errors.Is(err,store.ErrMFAInvalid){writeError(w,403,"mfa_invalid","The TOTP code is invalid or already used");return}
+	if errors.Is(err,store.ErrMFALocked){writeError(w,429,"mfa_locked","MFA verification is temporarily locked");return}
+	if errors.Is(err,store.ErrMFARequired){writeError(w,409,"mfa_not_enrolled","Start TOTP enrollment before verification");return}
+	if err!=nil{writeError(w,409,"mfa_verification_failed",err.Error());return}
+	writeJSON(w,200,map[string]any{"totp_enabled":true})
+}
 func (a *API) revokeKey(w http.ResponseWriter,r *http.Request){
-	err:=a.store.RevokeAPIKey(r.Context(),principal(r),r.PathValue("id"))
+	err:=a.store.RevokeAPIKey(r.Context(),principal(r),r.PathValue("id"),r.Header.Get("X-AgentGuard-TOTP"))
 	if errors.Is(err,store.ErrNotFound){writeError(w,404,"not_found","API key not found");return}
-	if err!=nil{writeError(w,500,"revoke_failed","Unable to revoke API key");return}
+	if errors.Is(err,store.ErrMFARequired){writeError(w,403,"mfa_required","Enroll TOTP MFA on the calling API key before revoking keys");return}
+	if errors.Is(err,store.ErrMFAInvalid){writeError(w,403,"mfa_invalid","A valid, unused TOTP code is required");return}
+	if errors.Is(err,store.ErrMFALocked){writeError(w,429,"mfa_locked","MFA verification is temporarily locked");return}
+	if err!=nil{writeError(w,409,"revoke_failed",err.Error());return}
 	w.WriteHeader(http.StatusNoContent)
 }
 
