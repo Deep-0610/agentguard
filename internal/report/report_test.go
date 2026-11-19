@@ -16,6 +16,7 @@ func TestRenderFormatsDoNotExposeConfigurationSecrets(t *testing.T) {
 		Command: "node",
 		Args: []string{"--token", "password=supersecretvalue"},
 		URL: "https://example.test/mcp?api_key=privatecredentialvalue",
+		Transport: "transportsecretvalue",
 		Env: map[string]string{"GITHUB_TOKEN": secret},
 		Tools: []map[string]any{{"example": secret}},
 		Metadata: map[string]interface{}{"credential": secret},
@@ -26,7 +27,7 @@ func TestRenderFormatsDoNotExposeConfigurationSecrets(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s render failed: %v", format, err)
 		}
-		for _, forbidden := range []string{secret, "supersecretvalue", "privatecredentialvalue"} {
+		for _, forbidden := range []string{secret, "supersecretvalue", "privatecredentialvalue", "transportsecretvalue"} {
 			if strings.Contains(string(output), forbidden) {
 				t.Fatalf("%s report leaked sensitive value %q", format, forbidden)
 			}
