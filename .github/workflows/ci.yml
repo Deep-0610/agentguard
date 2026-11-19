@@ -2,24 +2,39 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "hardening/**"]
   pull_request:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  quality:
+    name: Go quality and tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: "1.22.x"
           cache: true
-      - name: Format Go sources
-        run: gofmt -w .
+      - name: Enforce gofmt
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "The following Go files are not gofmt-formatted:"
+            echo "$files"
+            exit 1
+          fi
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test -race ./...
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: Build
+        run: go build ./...
