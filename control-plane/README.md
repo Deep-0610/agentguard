@@ -13,7 +13,7 @@ This service is the first commercial control-plane slice: tenant-scoped scan ing
 - Identity first-seen/last-seen tracking, drift history, credential-age metadata, risk-ranked inventory, and tenant-scoped identity relationships.
 - Server-side risk rules for privileged identities without active owners, toxic permission combinations, unverified OAuth applications, and stale API tokens.
 - OPA/Rego policy evaluation for tenant-scoped inventory reads and MCP tool invocation decisions; unknown actions and schema drift are denied by default.
-- Finding status changes create finding-history and audit events.
+- Finding status changes create finding-history and audit events. Owner/admins can also apply reasoned, time-bounded (maximum 90-day) suppressions, clear them with a reason, inspect triage history, and see active suppression state in finding lists and dashboard counts.
 - Audit events are hash-chained per tenant; database triggers reject UPDATE and DELETE.
 - Health endpoints, security headers, request IDs, and graceful shutdown.
 
@@ -53,7 +53,7 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
 | GET | /v1/identities | owner, admin, analyst, viewer | Risk-ranked identity inventory |
 | GET | /v1/relationships | owner, admin, analyst, viewer | Tenant-scoped identity graph edges |
 | GET | /v1/findings | owner, admin, analyst, viewer | Findings with optional status filter |
-| PATCH | /v1/findings/{id}/status | owner, admin, analyst | Update finding workflow status |
+| PATCH | /v1/findings/{id}/status | owner, admin, analyst | Update finding workflow status |\n| GET | /v1/findings/{id}/events | owner, admin, analyst, viewer | Finding triage history |\n| POST | /v1/findings/{id}/suppress | owner, admin | Temporarily suppress a finding with reason and expiry |\n| DELETE | /v1/findings/{id}/suppress | owner, admin | Clear a suppression with reason |
 | GET | /v1/audit-events | owner, admin, analyst | Tenant audit history |
 | GET | /v1/api-keys | owner, admin | List key metadata; never secrets |
 | POST | /v1/api-keys | owner, admin | Create a scoped key; secret shown once |
