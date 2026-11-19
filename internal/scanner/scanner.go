@@ -169,7 +169,7 @@ func secretFinding(s model.Server, resource, location, key, title, severity, val
 	return model.Finding{
 		ID: id("secret", s.Config, s.Name, location, key), Severity: severity, Category: "secret-exposure",
 		Title: title, Description: "A value matched a credential heuristic or appeared in a field whose name indicates sensitive data. This is a heuristic finding; AgentGuard does not validate credentials.",
-		Resource: resource, Location: location, Evidence: redact(value),
+		Resource: resource, Location: SafeLabel(location), Evidence: redact(value),
 		Remediation: "Move credentials to an OS-backed secret store or managed secret provider. If this value was exposed, rotate it using the provider's approved process.",
 		Score: severityScore(severity), Tags: []string{"secret", "credential"},
 	}
