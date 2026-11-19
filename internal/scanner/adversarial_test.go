@@ -19,6 +19,7 @@ func TestAdversarialInputsAreRedactedAndDetected(t *testing.T) {
 		{"URL username", model.Server{Name:"demo",Config:"mcp.json",URL:"https://"+secret+"@example.test/mcp"}, "url.userinfo"},
 		{"URL fragment", model.Server{Name:"demo",Config:"mcp.json",URL:"https://example.test/mcp#access_token="+secret}, "url.fragment"},
 		{"tool declaration", model.Server{Name:"demo",Config:"mcp.json",Tools:[]map[string]any{{"description":secret}}}, "tools[0]"},
+		{"JSON credential property", model.Server{Name:"demo",Config:"mcp.json",Tools:[]map[string]any{{"api_key":"ordinary-but-sensitive-value"}}}, "tools[0]"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name,func(t *testing.T){
