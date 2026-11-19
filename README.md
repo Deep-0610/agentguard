@@ -10,7 +10,10 @@ AgentGuard is an early-stage security product focused on the growing attack surf
 
 - Reads supported MCP JSON configuration files without launching servers or calling tools.
 - Detects selected credential patterns and suspicious sensitive-field values in environment variables, command strings, arguments, and URL query parameters.
-- Redacts detected credential values in finding evidence.
+- Fully redacts detected credential values in finding evidence.
+- Bounds file traversal, JSON nesting, per-file size, discovered config count, and aggregate input size.
+- Rejects symlink config inputs, duplicate JSON keys, and malformed server entries.
+- Writes report files atomically with restrictive permissions and refuses symlink destinations or overwriting scanned inputs.
 - Flags HTTP remote endpoints and shell-based launch commands for review.
 - Produces deterministic SHA-256 fingerprints for declared tool schemas.
 - Exports table, JSON, HTML, and SARIF reports.
@@ -19,7 +22,7 @@ Detection is heuristic. A clean scan does not prove that an environment is secur
 
 ## Quick start
 
-Requires Go 1.22 or newer.
+Requires Go 1.26 or newer.
 
 ```bash
 git clone https://github.com/Deep-0610/agentguard.git
