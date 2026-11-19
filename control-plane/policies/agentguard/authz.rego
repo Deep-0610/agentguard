@@ -43,7 +43,7 @@ decision := {
 } if {
   input.action == "tool.invoke"
   input.actor.tenant_id == input.resource.tenant_id
-  input.tool.risk in {"high", "critical"}
+  input.tool.risk in {"medium", "high", "critical"}
   regex.match("^[a-f0-9]{64}$", input.tool.schema_hash)
   regex.match("^[a-f0-9]{64}$", input.tool.approved_schema_hash)
   input.tool.schema_hash == input.tool.approved_schema_hash
