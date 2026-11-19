@@ -112,9 +112,15 @@ func (a *API) identityEvents(w http.ResponseWriter,r *http.Request){
 }
 func (a *API) listKeys(w http.ResponseWriter,r *http.Request){v,err:=a.store.ListAPIKeys(r.Context(),principal(r).TenantID);if err!=nil{writeError(w,500,"query_failed","Unable to load API keys");return};writeJSON(w,200,map[string]any{"items":v})}
 func (a *API) createKey(w http.ResponseWriter,r *http.Request){
-	var body struct{Name string `json:"name"`;Role string `json:"role"`}
+	var body struct{Name string `json:"name"`;Role string `json:"role"`;ExpiresAt string `json:"expires_at,omitempty"`}
 	if _,err:=readJSON(w,r,&body,16<<10);err!=nil{writeError(w,400,"invalid_request",err.Error());return}
-	key,secret,err:=a.store.CreateAPIKey(r.Context(),principal(r),body.Name,body.Role,nil)
+	var expires *time.Time
+	if body.ExpiresAt!=""{
+		parsed,err:=time.Parse(time.RFC3339,body.ExpiresAt)
+		if err!=nil||!parsed.After(time.Now()){writeError(w,422,"validation_error","expires_at must be a future RFC3339 timestamp");return}
+		expires=&parsed
+	}
+	key,secret,err:=a.store.CreateAPIKey(r.Context(),principal(r),body.Name,body.Role,expires)
 	if err!=nil{writeError(w,422,"validation_error",err.Error());return}
 	writeJSON(w,201,map[string]any{"key":key,"secret":secret,"warning":"Copy this secret now. It cannot be retrieved again."})
 }
