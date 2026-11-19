@@ -71,7 +71,7 @@ func FuzzAnalyzeSensitiveEnvironmentValues(f *testing.F) {
 	f.Fuzz(func(t *testing.T, value string) {
 		findings := Analyze([]model.Server{{Name:"fuzz",Config:"mcp.json",Env:map[string]string{"TOKEN":value}}})
 		for _, finding := range findings {
-			if value != "" && finding.Evidence == value {
+			if value != "" && value != "[REDACTED]" && finding.Evidence == value {
 				t.Fatalf("finding evidence retained sensitive input")
 			}
 		}
