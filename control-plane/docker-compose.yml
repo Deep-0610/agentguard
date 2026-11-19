@@ -13,17 +13,26 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
+  opa:
+    image: openpolicyagent/opa:1.4.2
+    command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
+    volumes:
+      - ./policies:/policies:ro
+    restart: unless-stopped
   control-plane:
     build: .
     environment:
       AG_DATABASE_URL: postgres://agentguard:${POSTGRES_PASSWORD}@postgres:5432/agentguard?sslmode=disable
       AG_API_KEY_PEPPER: ${AG_API_KEY_PEPPER:?Set a random 32+ character pepper}
+      AG_OPA_URL: http://opa:8181
       AG_LISTEN_ADDR: :8080
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
+      opa:
+        condition: service_started
     restart: unless-stopped
 volumes:
   agentguard-postgres:
