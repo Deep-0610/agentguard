@@ -45,3 +45,10 @@ func TestWriteReportCreatesPrivateOutput(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if string(got) != "report-data" { t.Fatalf("unexpected report content: %q", got) }
 }
+
+func TestRunScanRejectsEmptyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := runScan([]string{"--path", dir}); err == nil {
+		t.Fatal("expected empty scan target to return an explicit error")
+	}
+}
