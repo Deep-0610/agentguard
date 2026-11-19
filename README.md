@@ -2,9 +2,9 @@
 
 **Discover, assess, and govern AI agents, MCP servers, and non-human identities.**
 
-AgentGuard is an early-stage security product focused on the growing attack surface created by AI agents, Model Context Protocol (MCP) servers, and non-human identities (NHIs). The current deliverable is a local-first, read-only Go scanner. The commercial roadmap adds centralized inventory, identity governance, policy enforcement, and runtime controls.
+AgentGuard is an early-stage security product focused on the growing attack surface created by AI agents, Model Context Protocol (MCP) servers, and non-human identities (NHIs). The current deliverable is a local-first, read-only Go scanner. The commercial control-plane foundation is now being developed alongside the scanner: tenant-scoped ingestion, NHI inventory, findings workflows, OPA evaluation, and audit history. Runtime gateway enforcement remains a later milestone.
 
-> **Product status:** Early development / scanner MVP. The governance control plane, provider integrations, and runtime gateway are not yet implemented. Do not represent this repository as a production-ready enterprise platform or as a compliance certification.
+> **Product status:** Early development. The local-first scanner is an MVP. The commercial control plane is an early development foundation, not general availability. Provider integrations, SSO/MFA, browser dashboard, runtime gateway, independent penetration testing, and production operations remain incomplete. Do not represent this repository as a production-ready enterprise platform or compliance certification.
 
 ## What works today
 
