@@ -265,10 +265,42 @@ func readJSON(w http.ResponseWriter,r *http.Request,dst any,max int64)([]byte,er
 	if r.Header.Get("Content-Type")!=""&&!strings.HasPrefix(r.Header.Get("Content-Type"),"application/json"){return nil,fmt.Errorf("Content-Type must be application/json")}
 	r.Body=http.MaxBytesReader(w,r.Body,max);defer r.Body.Close()
 	raw,err:=io.ReadAll(r.Body);if err!=nil{return nil,fmt.Errorf("request body is invalid or exceeds %d bytes",max)}
+	if err=validateJSONStructure(raw);err!=nil{return nil,fmt.Errorf("invalid JSON structure: %w",err)}
 	decoder:=json.NewDecoder(bytes.NewReader(raw));decoder.DisallowUnknownFields()
 	if err=decoder.Decode(dst);err!=nil{return nil,fmt.Errorf("invalid JSON: %w",err)}
 	if decoder.Decode(&struct{}{})!=io.EOF{return nil,fmt.Errorf("request must contain exactly one JSON value")}
 	return raw,nil
+}
+
+func validateJSONStructure(raw []byte) error {
+	decoder:=json.NewDecoder(bytes.NewReader(raw))
+	if err:=validateJSONValue(decoder,0);err!=nil{return err}
+	if _,err:=decoder.Token();err!=io.EOF{return fmt.Errorf("request must contain exactly one JSON value")}
+	return nil
+}
+
+func validateJSONValue(decoder *json.Decoder,depth int) error {
+	if depth>128{return fmt.Errorf("JSON nesting exceeds 128 levels")}
+	token,err:=decoder.Token();if err!=nil{return err}
+	delimiter,ok:=token.(json.Delim);if !ok{return nil}
+	switch delimiter {
+	case '{':
+		seen:=map[string]struct{}{}
+		for decoder.More(){
+			keyToken,err:=decoder.Token();if err!=nil{return err}
+			key,ok:=keyToken.(string);if !ok{return fmt.Errorf("object key must be a string")}
+			if _,exists:=seen[key];exists{return fmt.Errorf("duplicate object key %q",key)}
+			seen[key]=struct{}{}
+			if err=validateJSONValue(decoder,depth+1);err!=nil{return err}
+		}
+		closing,err:=decoder.Token();if err!=nil{return err};if closing!=json.Delim('}'){return fmt.Errorf("unterminated object")}
+	case '[':
+		for decoder.More(){if err=validateJSONValue(decoder,depth+1);err!=nil{return err}}
+		closing,err:=decoder.Token();if err!=nil{return err};if closing!=json.Delim(']'){return fmt.Errorf("unterminated array")}
+	default:
+		return fmt.Errorf("unexpected JSON delimiter")
+	}
+	return nil
 }
 func writeJSON(w http.ResponseWriter,status int,v any){w.Header().Set("Content-Type","application/json");w.WriteHeader(status);_ = json.NewEncoder(w).Encode(v)}
 func writeError(w http.ResponseWriter,status int,code,message string){writeJSON(w,status,map[string]any{"error":map[string]string{"code":code,"message":message}})}
