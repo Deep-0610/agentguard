@@ -38,6 +38,9 @@ func (a *API) Handler()http.Handler{
 	mux.Handle("GET /v1/relationships",a.auth(http.HandlerFunc(a.relationships),"owner","admin","analyst","viewer"))
 	mux.Handle("GET /v1/findings",a.auth(http.HandlerFunc(a.findings),"owner","admin","analyst","viewer"))
 	mux.Handle("PATCH /v1/findings/{id}/status",a.auth(http.HandlerFunc(a.updateFinding),"owner","admin","analyst"))
+	mux.Handle("GET /v1/findings/{id}/events",a.auth(http.HandlerFunc(a.findingEvents),"owner","admin","analyst","viewer"))
+	mux.Handle("POST /v1/findings/{id}/suppress",a.auth(http.HandlerFunc(a.suppressFinding),"owner","admin"))
+	mux.Handle("DELETE /v1/findings/{id}/suppress",a.auth(http.HandlerFunc(a.unsuppressFinding),"owner","admin"))
 	mux.Handle("GET /v1/audit-events",a.auth(http.HandlerFunc(a.audit),"owner","admin","analyst"))
 	mux.Handle("GET /v1/audit-events/verify",a.auth(http.HandlerFunc(a.verifyAudit),"owner","admin"))
 	mux.Handle("GET /v1/identities/{id}/events",a.auth(http.HandlerFunc(a.identityEvents),"owner","admin","analyst","viewer"))
@@ -170,6 +173,32 @@ func (a *API) updateFinding(w http.ResponseWriter,r *http.Request){
 	if errors.Is(err,store.ErrNotFound){writeError(w,404,"not_found","Finding not found");return}
 	if err!=nil{writeError(w,400,"update_failed","Unable to update finding status");return}
 	writeJSON(w,200,map[string]any{"status":"updated"})
+}
+func (a *API) findingEvents(w http.ResponseWriter,r *http.Request){
+	items,err:=a.store.ListFindingEvents(r.Context(),principal(r).TenantID,r.PathValue("id"),queryLimit(r,100,500))
+	if errors.Is(err,store.ErrNotFound){writeError(w,404,"not_found","Finding not found");return}
+	if err!=nil{writeError(w,500,"query_failed","Unable to load finding history");return}
+	writeJSON(w,200,map[string]any{"items":items})
+}
+func (a *API) suppressFinding(w http.ResponseWriter,r *http.Request){
+	var body struct{Reason string `json:"reason"`;ExpiresAt string `json:"expires_at"`}
+	if _,err:=readJSON(w,r,&body,16<<10);err!=nil{writeError(w,400,"invalid_request",err.Error());return}
+	expires,err:=time.Parse(time.RFC3339,body.ExpiresAt)
+	if err!=nil{writeError(w,422,"validation_error","expires_at must be an RFC3339 timestamp");return}
+	body.Reason=redactUntrusted(body.Reason)
+	err=a.store.SetFindingSuppression(r.Context(),principal(r),r.PathValue("id"),body.Reason,expires)
+	if errors.Is(err,store.ErrNotFound){writeError(w,404,"not_found","Finding not found");return}
+	if err!=nil{writeError(w,422,"suppression_failed",err.Error());return}
+	writeJSON(w,200,map[string]any{"status":"suppressed","expires_at":expires.UTC()})
+}
+func (a *API) unsuppressFinding(w http.ResponseWriter,r *http.Request){
+	var body struct{Reason string `json:"reason"`}
+	if _,err:=readJSON(w,r,&body,8<<10);err!=nil{writeError(w,400,"invalid_request",err.Error());return}
+	body.Reason=redactUntrusted(body.Reason)
+	err:=a.store.ClearFindingSuppression(r.Context(),principal(r),r.PathValue("id"),body.Reason)
+	if errors.Is(err,store.ErrNotFound){writeError(w,404,"not_found","Finding not found");return}
+	if err!=nil{writeError(w,409,"unsuppression_failed",err.Error());return}
+	writeJSON(w,200,map[string]any{"status":"unsuppressed"})
 }
 func (a *API) audit(w http.ResponseWriter,r *http.Request){v,err:=a.store.ListAudit(r.Context(),principal(r).TenantID,queryLimit(r,100,500));if err!=nil{writeError(w,500,"query_failed","Unable to load audit events");return};writeJSON(w,200,map[string]any{"items":v})}
 func (a *API) verifyAudit(w http.ResponseWriter,r *http.Request){
