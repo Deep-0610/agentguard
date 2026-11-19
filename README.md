@@ -68,7 +68,7 @@ go test -race ./...
 go build ./...
 ```
 
-CI enforces formatting, vetting, race-enabled tests, and compilation. Passing CI is not a security certification.
+CI formats Go sources before vetting, race-enabled tests, and compilation. Passing CI is not a security certification.
 
 ## Product direction
 
