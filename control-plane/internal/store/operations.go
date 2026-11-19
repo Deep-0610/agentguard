@@ -25,7 +25,7 @@ func appendAudit(ctx context.Context,tx *sql.Tx,tenant,actor,role,event,resource
 }
 func (s *Store) audit(ctx context.Context,p Principal,event,resource,id string,payload map[string]any)error{
 	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return err};defer tx.Rollback()
-	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,event,resource,id,"",payload);err!=nil{return err}
+	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,event,resource,id,p.RequestID,payload);err!=nil{return err}
 	return tx.Commit()
 }
 
@@ -68,7 +68,7 @@ func (s *Store) Ingest(ctx context.Context,p Principal,req ScanRequest,payloadHa
 		if _,err=tx.ExecContext(ctx,`INSERT INTO scan_findings(tenant_id,scan_id,finding_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,p.TenantID,scanID,findingID);err!=nil{return IngestResult{},err}
 		result.FindingsUpserted++
 	}
-	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"scan.ingested","scan",scanID,"",map[string]any{"assets":result.AssetsUpserted,"findings":result.FindingsUpserted,"source":req.Source});err!=nil{return IngestResult{},err}
+	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"scan.ingested","scan",scanID,p.RequestID,map[string]any{"assets":result.AssetsUpserted,"findings":result.FindingsUpserted,"source":req.Source});err!=nil{return IngestResult{},err}
 	if err=tx.Commit();err!=nil{return IngestResult{},err}
 	return result,nil
 }
@@ -121,6 +121,6 @@ func (s *Store) SetFindingStatus(ctx context.Context,p Principal,id,status,reaso
 	if err==sql.ErrNoRows{return ErrNotFound};if err!=nil{return err}
 	if _,err=tx.ExecContext(ctx,`UPDATE findings SET status=$3,updated_at=now() WHERE tenant_id=$1 AND id=$2`,p.TenantID,id,status);err!=nil{return err}
 	if _,err=tx.ExecContext(ctx,`INSERT INTO finding_events(tenant_id,finding_id,actor,previous_status,new_status,reason) VALUES($1,$2,$3,$4,$5,$6)`,p.TenantID,id,p.KeyID,old,status,reason);err!=nil{return err}
-	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"finding.status_changed","finding",id,"",map[string]any{"from":old,"to":status,"reason":reason});err!=nil{return err}
+	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"finding.status_changed","finding",id,p.RequestID,map[string]any{"from":old,"to":status,"reason":reason});err!=nil{return err}
 	return tx.Commit()
 }
