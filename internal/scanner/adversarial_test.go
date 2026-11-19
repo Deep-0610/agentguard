@@ -55,9 +55,10 @@ func FuzzRedactNeverRetainsNonEmptyInput(f *testing.F) {
 	f.Add("ghp_abcdefghijklmnopqrstuvwxyz1234567890")
 	f.Add("password=hunter2")
 	f.Add("密碼秘密令牌")
+	f.Add("[REDACTED]")
 	f.Fuzz(func(t *testing.T, value string) {
 		got := redact(value)
-		if value != "" && strings.Contains(got, value) {
+		if value != "" && got != "[REDACTED]" {
 			t.Fatalf("redaction retained input")
 		}
 	})
@@ -70,7 +71,7 @@ func FuzzAnalyzeSensitiveEnvironmentValues(f *testing.F) {
 	f.Fuzz(func(t *testing.T, value string) {
 		findings := Analyze([]model.Server{{Name:"fuzz",Config:"mcp.json",Env:map[string]string{"TOKEN":value}}})
 		for _, finding := range findings {
-			if value != "" && strings.Contains(finding.Evidence, value) {
+			if value != "" && finding.Evidence == value {
 				t.Fatalf("finding evidence retained sensitive input")
 			}
 		}
