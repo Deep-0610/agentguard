@@ -42,7 +42,7 @@ func migrate() error {
 func serve() error {
 	ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second);c,s,err:=openStore(ctx);cancel();if err!=nil{return err};defer s.Close()
 	logger:=log.New(os.Stdout,"agentguard-control-plane ",log.LstdFlags|log.LUTC)
-	server:=&http.Server{Addr:c.Address,Handler:api.New(s,logger).Handler(),ReadHeaderTimeout:5*time.Second,ReadTimeout:c.ReadTimeout,WriteTimeout:c.WriteTimeout,IdleTimeout:c.IdleTimeout,MaxHeaderBytes:1<<20}
+	server:=&http.Server{Addr:c.Address,Handler:api.New(s,logger).Handler(),ReadHeaderTimeout:5*time.Second,ReadTimeout:c.ReadTimeout,WriteTimeout:c.WriteTimeout,IdleTimeout:c.IdleTimeout,MaxHeaderBytes:64<<10}
 	errCh:=make(chan error,1);go func(){logger.Printf("listening addr=%s",c.Address);errCh<-server.ListenAndServe()}()
 	stop:=make(chan os.Signal,1);signal.Notify(stop,syscall.SIGINT,syscall.SIGTERM)
 	select { case err:=<-errCh: if err==http.ErrServerClosed{return nil};return err; case <-stop: }
