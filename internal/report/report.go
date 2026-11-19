@@ -43,6 +43,7 @@ func safeFindings(in []model.Finding) []model.Finding {
 	out := make([]model.Finding, len(in))
 	for i, finding := range in {
 		out[i] = finding
+		out[i].Tags = append([]string(nil), finding.Tags...)
 		out[i].Category = scanner.SafeLabel(finding.Category)
 		out[i].Title = scanner.SafeLabel(finding.Title)
 		out[i].Description = scanner.SafeLabel(finding.Description)
