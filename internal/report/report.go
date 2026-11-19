@@ -13,10 +13,11 @@ import (
 )
 
 func Render(format string, servers []model.Server, findings []model.Finding) ([]byte, error) {
-	result := model.Result{Version: "0.1.0", Servers: safeServers(servers), Findings: findings}
+	safe := safeFindings(findings)
+	result := model.Result{Version: "0.1.0", Servers: safeServers(servers), Findings: safe}
 	result.Summary.Servers = len(servers)
 	result.Summary.Findings = len(findings)
-	for _, f := range findings {
+	for _, f := range safe {
 		switch f.Severity {
 		case "critical": result.Summary.Critical++
 		case "high": result.Summary.High++
@@ -36,6 +37,28 @@ func Render(format string, servers []model.Server, findings []model.Finding) ([]
 	default:
 		return nil, fmt.Errorf("unsupported format %q (use table, json, html, or sarif)", format)
 	}
+}
+
+func safeFindings(in []model.Finding) []model.Finding {
+	out := make([]model.Finding, len(in))
+	for i, finding := range in {
+		out[i] = finding
+		out[i].Category = scanner.SafeLabel(finding.Category)
+		out[i].Title = scanner.SafeLabel(finding.Title)
+		out[i].Description = scanner.SafeLabel(finding.Description)
+		out[i].Resource = scanner.SafeLabel(finding.Resource)
+		out[i].Location = scanner.SafeLabel(finding.Location)
+		out[i].Remediation = scanner.SafeLabel(finding.Remediation)
+		if finding.Category == "secret-exposure" && finding.Evidence != "" {
+			out[i].Evidence = "[REDACTED]"
+		} else {
+			out[i].Evidence = scanner.SafeLabel(finding.Evidence)
+		}
+		for j, tag := range finding.Tags {
+			out[i].Tags[j] = scanner.SafeLabel(tag)
+		}
+	}
+	return out
 }
 
 func safeServers(in []model.Server) []model.Server {
