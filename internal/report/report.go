@@ -47,6 +47,7 @@ func safeServers(in []model.Server) []model.Server {
 		out[i].Command = ""
 		out[i].Args = nil
 		out[i].URL = ""
+		out[i].Transport = ""
 		out[i].Env = nil
 		out[i].Tools = nil
 		out[i].Metadata = nil
