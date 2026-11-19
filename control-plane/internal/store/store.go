@@ -113,7 +113,8 @@ func (s *Store) Authenticate(ctx context.Context,token string)(Principal,error){
 	return p,nil
 }
 func (s *Store) CreateAPIKey(ctx context.Context,p Principal,name,role string,expires *time.Time)(APIKey,string,error){
-	if role!="admin"&&role!="analyst"&&role!="viewer"&&role!="ingest"{return APIKey{},"",fmt.Errorf("role must be admin, analyst, viewer, or ingest")}
+	if role!="owner"&&role!="admin"&&role!="analyst"&&role!="viewer"&&role!="ingest"{return APIKey{},"",fmt.Errorf("unsupported API key role")}
+	if role=="owner"&&p.Role!="owner"{return APIKey{},"",fmt.Errorf("only an owner can create another owner key")}
 	if strings.TrimSpace(name)==""||len(name)>120{return APIKey{},"",fmt.Errorf("key name is required and must be at most 120 characters")}
 	keyID,secret,token,err:=makeKey();if err!=nil{return APIKey{},"",err}
 	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return APIKey{},"",err};defer tx.Rollback()
@@ -133,7 +134,15 @@ func (s *Store) ListAPIKeys(ctx context.Context,tenant string)([]APIKey,error){
 }
 func (s *Store) RevokeAPIKey(ctx context.Context,p Principal,id string)error{
 	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return err};defer tx.Rollback()
-	res,err:=tx.ExecContext(ctx,`UPDATE api_keys SET revoked_at=now() WHERE tenant_id=$1 AND id=$2 AND revoked_at IS NULL`,p.TenantID,id);if err!=nil{return err};n,_:=res.RowsAffected();if n==0{return ErrNotFound}
-	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"api_key.revoked","api_key",id,"",map[string]any{});err!=nil{return err}
+	var targetRole string
+	err=tx.QueryRowContext(ctx,`SELECT role FROM api_keys WHERE tenant_id=$1 AND id=$2 AND revoked_at IS NULL FOR UPDATE`,p.TenantID,id).Scan(&targetRole)
+	if err==sql.ErrNoRows{return ErrNotFound};if err!=nil{return err}
+	if targetRole=="owner"{
+		var owners int
+		if err=tx.QueryRowContext(ctx,`SELECT count(*) FROM api_keys WHERE tenant_id=$1 AND role='owner' AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now())`,p.TenantID).Scan(&owners);err!=nil{return err}
+		if owners<=1{return fmt.Errorf("cannot revoke the last active owner key")}
+	}
+	_,err=tx.ExecContext(ctx,`UPDATE api_keys SET revoked_at=now() WHERE tenant_id=$1 AND id=$2 AND revoked_at IS NULL`,p.TenantID,id);if err!=nil{return err}
+	if err=appendAudit(ctx,tx,p.TenantID,p.KeyID,p.Role,"api_key.revoked","api_key",id,"",map[string]any{"target_role":targetRole});err!=nil{return err}
 	return tx.Commit()
 }
