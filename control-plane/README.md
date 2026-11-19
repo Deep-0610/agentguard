@@ -47,7 +47,7 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
 | GET | /v1/identities/{id}/events | owner, admin, analyst, viewer | Identity drift timeline |
 | GET | /v1/audit-events/verify | owner, admin | Verify tenant audit hash chain |
 | GET | /v1/dashboard/summary | owner, admin, analyst, viewer | Tenant KPI summary |
-| GET | /v1/identities | owner, admin, analyst, viewer | Risk-ranked identity inventory |
+| GET | /v1/identities | owner, admin, analyst, viewer | Risk-ranked identity inventory |\n| GET | /v1/relationships | owner, admin, analyst, viewer | Tenant identity graph edges |
 | GET | /v1/relationships | owner, admin, analyst, viewer | Tenant-scoped identity graph edges |
 | GET | /v1/findings | owner, admin, analyst, viewer | Findings with optional status filter |
 | PATCH | /v1/findings/{id}/status | owner, admin, analyst | Update finding workflow status |
@@ -71,8 +71,21 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
     "name": "internal-docs",
     "owner_status": "UNKNOWN",
     "environment": "development",
-    "scopes": [],
-    "risk_score": 45
+    "scopes": []
+  }, {
+    "external_id": "helper-app",
+    "source": "github",
+    "kind": "oauth_app",
+    "name": "helper-app",
+    "owner_status": "ACTIVE",
+    "verified": true
+  }],
+  "relationships": [{
+    "from_source": "mcp",
+    "from_external_id": "internal-docs",
+    "to_source": "github",
+    "to_external_id": "helper-app",
+    "type": "uses"
   }],
   "findings": [{
     "fingerprint": "stable-rule-and-resource-fingerprint",
