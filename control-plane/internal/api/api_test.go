@@ -86,3 +86,18 @@ func TestRequestIDRejectsControlCharacters(t *testing.T) {
 	got:=rr.Header().Get("X-Request-ID")
 	if strings.ContainsAny(got,"\x1b\r\n") { t.Fatalf("unsafe request ID survived: %q",got) }
 }
+
+func TestValidSchemaHash(t *testing.T) {
+	if !validSchemaHash(strings.Repeat("a",64)) { t.Fatal("expected lowercase SHA-256 hex to be valid") }
+	for _,value:=range []string{"",strings.Repeat("A",64),strings.Repeat("g",64),strings.Repeat("a",63)} {
+		if validSchemaHash(value) { t.Fatalf("expected invalid schema hash %q to be rejected",value) }
+	}
+}
+func TestRequestIDIsBounded(t *testing.T) {
+	handler:=requestID(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){}))
+	req:=httptest.NewRequest(http.MethodGet,"/",nil)
+	req.Header.Set("X-Request-ID",strings.Repeat("a",100))
+	rr:=httptest.NewRecorder()
+	handler.ServeHTTP(rr,req)
+	if got:=rr.Header().Get("X-Request-ID");len(got)>64 { t.Fatalf("request ID was not bounded: length=%d",len(got)) }
+}
