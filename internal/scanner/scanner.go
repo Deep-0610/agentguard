@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/Deep-0610/agentguard/internal/model"
 )
@@ -26,6 +27,7 @@ var secretPatterns = []struct {
 }
 
 var sensitiveEnvName = regexp.MustCompile(`(?i)(?:secret|token|password|api[_-]?key|private[_-]?key|credential|auth)`)
+var ansiEscape = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))`)
 var shellNames = map[string]bool{
 	"sh": true, "bash": true, "zsh": true, "dash": true, "ash": true,
 	"fish": true, "ksh": true, "csh": true, "tcsh": true,
@@ -210,6 +212,16 @@ func SafeLabel(value string) string {
 	if value == "" {
 		return ""
 	}
+	value = ansiEscape.ReplaceAllString(value, "")
+	value = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, value)
+	if value == "" {
+		return ""
+	}
 	for _, pattern := range secretPatterns {
 		if pattern.re.MatchString(value) {
 			return "[REDACTED]"
@@ -226,12 +238,20 @@ func SafeLabel(value string) string {
 			for key, values := range parsed.Query() {
 				if sensitiveEnvName.MatchString(key) {
 					for _, item := range values {
-						if item != "" { return "[REDACTED]" }
+						if item != "" {
+							return "[REDACTED]"
+						}
 					}
 				}
 			}
-			if secretAssignment.MatchString(parsed.Fragment) { return "[REDACTED]" }
+			if secretAssignment.MatchString(parsed.Fragment) {
+				return "[REDACTED]"
+			}
 		}
+	}
+	runes := []rune(value)
+	if len(runes) > 512 {
+		return string(runes[:512]) + "…"
 	}
 	return value
 }
