@@ -34,7 +34,7 @@ func (s *Store) SetToolBaseline(ctx context.Context, p Principal, name, schemaHa
 		RETURNING tool_name,approved_schema_hash,risk,approved_by,updated_at`, p.TenantID, name, schemaHash, risk, p.KeyID).
 		Scan(&baseline.Name, &baseline.ApprovedSchemaHash, &baseline.Risk, &baseline.ApprovedBy, &baseline.UpdatedAt)
 	if err != nil { return ToolBaseline{}, err }
-	if err = appendAudit(ctx, tx, p.TenantID, p.KeyID, p.Role, "tool_baseline.updated", "tool_baseline", name, "", map[string]any{"risk": risk, "approved_schema_hash": schemaHash}); err != nil { return ToolBaseline{}, err }
+	if err = appendAudit(ctx, tx, p.TenantID, p.KeyID, p.Role, "tool_baseline.updated", "tool_baseline", name, p.RequestID, map[string]any{"risk": risk, "approved_schema_hash": schemaHash}); err != nil { return ToolBaseline{}, err }
 	if err = tx.Commit(); err != nil { return ToolBaseline{}, err }
 	return baseline, nil
 }
