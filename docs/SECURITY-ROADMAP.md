@@ -31,9 +31,11 @@ Reference: [NIST SP 800-218](https://csrc.nist.gov/pubs/sp/800/218/final).
 
 ## 3. Scanner hardening backlog
 
-- [ ] Add fuzz tests for JSON parsing, unusual Unicode, malformed URLs, and oversized inputs.
-- [ ] Add explicit limits for file count, total bytes, nesting depth, and per-file size.
-- [ ] Reject or safely handle symlink inputs and path traversal edge cases.
+- [x] Add native fuzz tests for redaction, sensitive environment analysis, and JSON parsing.
+- [ ] Expand fuzz coverage to malformed URLs, unusual Unicode, and report serialization.
+- [x] Add explicit limits for traversal entries/depth, config count, aggregate bytes, JSON nesting, and per-file size.
+- [x] Reject symlink and non-regular config inputs; verify opened file identity before reading.
+- [ ] Add platform-specific race tests for path replacement and filesystem edge cases.
 - [ ] Expand supported MCP client config formats based on documented fixtures.
 - [ ] Detect credentials in command arguments and URL components without printing raw values.
 - [ ] Ensure every report format is tested for secret leakage.
