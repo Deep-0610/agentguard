@@ -22,7 +22,7 @@ var secretPatterns = []struct {
 	{"GitHub token", regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{30,}`), "critical"},
 	{"Slack token", regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{20,}`), "high"},
 	{"Private key", regexp.MustCompile(`-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----`), "critical"},
-	{"Generic credential assignment", regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|token|client[_-]?secret|password)\s*[:=]\s*["']?[^\s"'{}]{8,}`), "high"},
+	{"Generic credential assignment", regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|token|client[_-]?secret|password)\s*["']?\s*[:=]\s*["']?[^\s"'{}]{8,}`), "high"},
 }
 
 var sensitiveEnvName = regexp.MustCompile(`(?i)(?:secret|token|password|api[_-]?key|private[_-]?key|credential|auth)`)
@@ -203,7 +203,7 @@ func redact(value string) string {
 	return "[REDACTED]"
 }
 
-var secretAssignment = regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|token|client[_-]?secret|password)\s*[:=]\s*[^\s,;]+`)
+var secretAssignment = regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|token|client[_-]?secret|password)\s*["']?\s*[:=]\s*["']?[^\s,;]+`)
 
 func SafeLabel(value string) string {
 	if value == "" {
