@@ -68,3 +68,29 @@ func TestHTMLReportEscapesUntrustedLabels(t *testing.T) {
 	if err!=nil { t.Fatal(err) }
 	if strings.Contains(string(output),`<script>alert`) { t.Fatal("untrusted label was emitted as executable HTML") }
 }
+
+func TestRenderSanitizesCallerSuppliedFindingData(t *testing.T) {
+	secret := "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+	finding := model.Finding{
+		ID: "opaque-id",
+		Category: "secret-exposure",
+		Severity: "critical",
+		Title: "credential " + secret,
+		Description: "exposed " + secret,
+		Resource: "server-" + secret,
+		Location: "env.TOKEN_" + secret,
+		Evidence: secret,
+		Remediation: "rotate " + secret,
+		Tags: []string{"tag-" + secret},
+	}
+	for _, format := range []string{"json", "html", "sarif", "table"} {
+		output, err := Render(format, nil, []model.Finding{finding})
+		if err != nil { t.Fatalf("%s: %v", format, err) }
+		if strings.Contains(string(output), secret) {
+			t.Fatalf("%s report leaked caller-supplied finding data", format)
+		}
+	}
+	if finding.Evidence != secret || finding.Tags[0] != "tag-"+secret {
+		t.Fatal("Render mutated caller-owned finding data")
+	}
+}
