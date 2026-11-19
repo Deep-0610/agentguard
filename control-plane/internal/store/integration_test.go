@@ -44,4 +44,11 @@ func TestTenantIsolationAndIngestion(t *testing.T) {
 	if !duplicate.Duplicate{t.Fatal("expected identical scan ingestion to be idempotent")}
 	_,err=s.Ingest(ctx,principalA,req,"different-payload")
 	if err!=ErrDuplicateScan{t.Fatalf("expected idempotency conflict, got %v",err)}
+	backupKey,backupSecret,err:=s.CreateAPIKey(ctx,principalA,"Backup owner","owner",nil);if err!=nil{t.Fatal(err)}
+	var originalKeyID string
+	if err=s.db.QueryRowContext(ctx,`SELECT id::text FROM api_keys WHERE tenant_id=$1 AND key_id=$2`,tenantA,principalA.KeyID).Scan(&originalKeyID);err!=nil{t.Fatal(err)}
+	if err=s.RevokeAPIKey(ctx,principalA,originalKeyID);err!=nil{t.Fatal(err)}
+	backupPrincipal,err:=s.Authenticate(ctx,backupSecret);if err!=nil{t.Fatal(err)}
+	if err=s.RevokeAPIKey(ctx,backupPrincipal,backupKey.ID);err==nil{t.Fatal("expected last active owner key revocation to be blocked")}
+	if _,err=s.Authenticate(ctx,keyA);err==nil{t.Fatal("revoked API key must no longer authenticate")}
 }
