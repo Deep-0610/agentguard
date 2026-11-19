@@ -39,6 +39,14 @@ func (s *Store) VerifyAuditChain(ctx context.Context,tenant string)(AuditVerific
 		expectedPrevious=storedHash;expectedSequence++
 	}
 	if err=rows.Err();err!=nil{return AuditVerification{},err}
+	var headSequence int64
+	var headHash string
+	if err=s.db.QueryRowContext(ctx,`SELECT sequence,last_hash FROM audit_heads WHERE tenant_id=$1`,tenant).Scan(&headSequence,&headHash);err!=nil{return AuditVerification{},err}
+	if headSequence!=result.EventsChecked||headHash!=expectedPrevious{
+		result.Valid=false
+		invalid:=result.EventsChecked+1
+		result.FirstInvalidSequence=&invalid
+	}
 	return result,nil
 }
 
