@@ -217,6 +217,21 @@ func SafeLabel(value string) string {
 	if secretAssignment.MatchString(value) {
 		return "[REDACTED]"
 	}
+	if strings.Contains(value, "://") {
+		if parsed, err := url.Parse(value); err == nil {
+			if parsed.User != nil {
+				return "[REDACTED]"
+			}
+			for key, values := range parsed.Query() {
+				if sensitiveEnvName.MatchString(key) {
+					for _, item := range values {
+						if item != "" { return "[REDACTED]" }
+					}
+				}
+			}
+			if secretAssignment.MatchString(parsed.Fragment) { return "[REDACTED]" }
+		}
+	}
 	return value
 }
 
