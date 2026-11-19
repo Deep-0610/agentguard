@@ -1,0 +1,366 @@
+openapi: 3.1.0
+info:
+  title: AgentGuard Control Plane API
+  version: 0.2.0
+  description: Tenant-scoped AI agent and non-human identity inventory, risk, audit, and policy evaluation API. Early development; not a general-availability service.
+servers:
+  - url: https://control-plane.example.com
+    description: Customer deployment (replace with your own URL)
+security:
+  - bearerAuth: []
+paths:
+  /healthz:
+    get:
+      security: []
+      summary: Liveness probe
+      responses:
+        "200":
+          description: Process is alive
+  /readyz:
+    get:
+      security: []
+      summary: Database readiness probe
+      responses:
+        "200":
+          description: Database is reachable
+        "503":
+          description: Database unavailable
+  /v1/ingest/scans:
+    post:
+      summary: Ingest a normalized scan snapshot
+      description: Tenant is resolved from the API key. Payloads are bounded and idempotent by scan_id plus payload digest. Never send raw credentials or configuration files.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanIngest"
+      responses:
+        "202":
+          description: Snapshot accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: scan_id was reused with different content
+        "413":
+          description: Request or record count exceeds limits
+        "422":
+          description: Validation failed
+  /v1/dashboard/summary:
+    get:
+      summary: Tenant dashboard metrics
+      responses:
+        "200":
+          description: Tenant-scoped counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  identities: { type: integer }
+                  open_findings: { type: integer }
+                  critical_findings: { type: integer }
+                  orphaned_identities: { type: integer }
+                  scans_24h: { type: integer }
+  /v1/identities:
+    get:
+      summary: Risk-ranked identity inventory
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Tenant-scoped identity inventory
+  /v1/relationships:
+    get:
+      summary: Tenant identity graph edges
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      responses:
+        "200":
+          description: Relationship edges with source and target identity summaries
+  /v1/identities/{id}/events:
+    get:
+      summary: Identity drift timeline
+      parameters:
+        - $ref: "#/components/parameters/IdentityID"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Tenant-scoped identity change history
+        "500":
+          $ref: "#/components/responses/ServerError"
+  /v1/findings:
+    get:
+      summary: Security findings
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, acknowledged, accepted-risk, remediated, false-positive]
+      responses:
+        "200":
+          description: Findings ordered by severity
+  /v1/findings/{id}/status:
+    patch:
+      summary: Update finding workflow status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [open, acknowledged, accepted-risk, remediated, false-positive]
+                reason:
+                  type: string
+                  maxLength: 1000
+      responses:
+        "200":
+          description: Finding status updated and audited
+        "404":
+          description: Finding not found in this tenant
+  /v1/audit-events:
+    get:
+      summary: Append-only audit history
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Hash-chained tenant audit events
+  /v1/audit-events/verify:
+    get:
+      summary: Verify tenant audit hash chain
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [valid, events_checked]
+                properties:
+                  valid: { type: boolean }
+                  events_checked: { type: integer }
+                  first_invalid_sequence: { type: integer }
+  /v1/api-keys:
+    get:
+      summary: List API key metadata
+      description: Secret values are never returned.
+      responses:
+        "200":
+          description: Tenant API keys
+    post:
+      summary: Create a scoped API key
+      description: The new secret is returned once. Store it in a managed secret store.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, role]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+                role: { type: string, enum: [owner, admin, analyst, viewer, ingest] }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "201":
+          description: Key created; secret shown once
+        "422":
+          description: Invalid role, name, or expiry
+  /v1/api-keys/{id}:
+    delete:
+      summary: Revoke an API key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Key revoked
+        "404":
+          description: Key not found in this tenant
+  /v1/policies/evaluate:
+    post:
+      summary: Evaluate a tenant-bound policy decision through OPA
+      description: Fail-closed. An OPA outage returns 503; decisions are written to the audit chain. This endpoint evaluates policy but does not proxy or execute tools.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [inventory.read, tool.invoke]
+                resource_type: { type: string, maxLength: 80 }
+                resource_id: { type: string, maxLength: 256 }
+                tool:
+                  type: object
+                  properties:
+                    name: { type: string, maxLength: 256 }
+                    risk: { type: string, enum: [low, medium, high, critical] }
+                    schema_hash: { type: string }
+                    approved_schema_hash: { type: string }
+                approval:
+                  type: object
+                  properties:
+                    required: { type: boolean }
+      responses:
+        "200":
+          description: Policy decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyDecision"
+        "503":
+          description: Policy service unavailable; action not authorized
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: AgentGuard API key
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+    IdentityID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Invalid JSON or request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServerError:
+      description: Request failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+    Asset:
+      type: object
+      required: [source, kind, name]
+      properties:
+        external_id: { type: string, maxLength: 512 }
+        source: { type: string, maxLength: 64 }
+        kind:
+          type: string
+          enum: [agent, mcp_server, oauth_app, service_principal, api_token, service_account, workload_identity, bot, unknown]
+        name: { type: string, maxLength: 512 }
+        owner_email: { type: string, maxLength: 320 }
+        owner_status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, UNKNOWN]
+        environment: { type: string, maxLength: 80 }
+        scopes:
+          type: array
+          maxItems: 256
+          items: { type: string }
+        verified: { type: boolean }
+        secret_age_days: { type: integer, minimum: 0 }
+        last_used_at: { type: string, format: date-time }
+    Finding:
+      type: object
+      required: [fingerprint, severity, title]
+      properties:
+        fingerprint: { type: string, maxLength: 256 }
+        rule_id: { type: string, maxLength: 128 }
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        confidence:
+          type: string
+          enum: [low, medium, high]
+        category: { type: string, maxLength: 128 }
+        title: { type: string, maxLength: 512 }
+        description: { type: string, maxLength: 4000 }
+        resource: { type: string, maxLength: 512 }
+        location: { type: string, maxLength: 512 }
+        evidence: { type: string, maxLength: 4096 }
+        remediation: { type: string, maxLength: 4000 }
+    Relationship:
+      type: object
+      required: [from_source, from_external_id, to_source, to_external_id, type]
+      properties:
+        from_source: { type: string }
+        from_external_id: { type: string }
+        to_source: { type: string }
+        to_external_id: { type: string }
+        type:
+          type: string
+          enum: [uses, accesses, delegates_to, created_by, connected_to, owns]
+        evidence: { type: string, maxLength: 1024 }
+    ScanIngest:
+      type: object
+      required: [scan_id, source]
+      properties:
+        scan_id: { type: string, maxLength: 128 }
+        source: { type: string, maxLength: 64 }
+        scanner_version: { type: string }
+        collected_at: { type: string, format: date-time }
+        assets:
+          type: array
+          maxItems: 10000
+          items: { $ref: "#/components/schemas/Asset" }
+        findings:
+          type: array
+          maxItems: 20000
+          items: { $ref: "#/components/schemas/Finding" }
+        relationships:
+          type: array
+          maxItems: 20000
+          items: { $ref: "#/components/schemas/Relationship" }
+    IngestResult:
+      type: object
+      properties:
+        scan_id: { type: string }
+        assets_upserted: { type: integer }
+        findings_upserted: { type: integer }
+        relationships_upserted: { type: integer }
+        duplicate: { type: boolean }
+    PolicyDecision:
+      type: object
+      required: [effect, rule_id, reason]
+      properties:
+        effect:
+          type: string
+          enum: [allow, deny, approval_required]
+        rule_id: { type: string }
+        reason: { type: string }
