@@ -56,7 +56,7 @@ func (a *API) auth(next http.Handler,roles ...string)http.Handler{
 	})
 }
 func principal(r *http.Request)store.Principal{return r.Context().Value(principalKey{}).(store.Principal)}
-func (a *API) ready(w http.ResponseWriter,r *http.Request){writeJSON(w,200,map[string]any{"status":"ready"})}
+func (a *API) ready(w http.ResponseWriter,r *http.Request){if err:=a.store.Ping(r.Context());err!=nil{writeError(w,503,"not_ready","Database is unavailable");return};writeJSON(w,200,map[string]any{"status":"ready"})}
 func (a *API) ingest(w http.ResponseWriter,r *http.Request){
 	var req store.ScanRequest
 	raw,err:=readJSON(w,r,&req,8<<20);if err!=nil{writeError(w,400,"invalid_request",err.Error());return}
