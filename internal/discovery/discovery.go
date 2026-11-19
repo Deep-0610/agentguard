@@ -3,6 +3,7 @@ package discovery
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,7 +12,13 @@ import (
 	"github.com/Deep-0610/agentguard/internal/model"
 )
 
-const maxConfigBytes = 2 << 20
+const (
+	maxConfigBytes = 2 << 20
+	maxTotalConfigBytes = 32 << 20
+	maxConfigFiles = 10000
+	maxWalkEntries = 100000
+	maxWalkDepth = 32
+)
 
 var configNames = map[string]bool{
 	"mcp.json": true,
@@ -46,18 +53,28 @@ func DefaultPaths() ([]string, error) {
 }
 
 func Expand(path string) ([]string, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, fmt.Errorf("inspect %s: %w", path, err)
 	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("refusing to scan symlink: %s", path)
+	}
 	if !info.IsDir() {
+		if !info.Mode().IsRegular() { return nil, fmt.Errorf("not a regular file: %s", path) }
 		return []string{path}, nil
 	}
 	var paths []string
+	entries := 0
 	err = filepath.WalkDir(path, func(p string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
+		entries++
+		if entries > maxWalkEntries { return fmt.Errorf("directory contains more than %d entries", maxWalkEntries) }
+		rel, relErr := filepath.Rel(path, p)
+		if relErr != nil { return relErr }
+		if depth := strings.Count(rel, string(os.PathSeparator)); depth > maxWalkDepth { return filepath.SkipDir }
 		if d.Type()&os.ModeSymlink != 0 {
 			if d.IsDir() { return filepath.SkipDir }
 			return nil
@@ -68,7 +85,8 @@ func Expand(path string) ([]string, error) {
 			}
 			return nil
 		}
-		if configNames[strings.ToLower(d.Name())] || (d.Name() == ".cursor" && false) {
+		if configNames[strings.ToLower(d.Name())] {
+			if len(paths) >= maxConfigFiles { return fmt.Errorf("more than %d MCP config files found", maxConfigFiles) }
 			paths = append(paths, p)
 		}
 		return nil
@@ -78,14 +96,35 @@ func Expand(path string) ([]string, error) {
 
 func Load(paths []string) ([]model.Server, error) {
 	var servers []model.Server
+	var totalBytes int64
 	for _, path := range paths {
-		info, err := os.Stat(path)
+		before, err := os.Lstat(path)
 		if err != nil { return nil, err }
-		if info.Size() > maxConfigBytes {
+		if before.Mode()&os.ModeSymlink != 0 || !before.Mode().IsRegular() {
+			return nil, fmt.Errorf("refusing non-regular or symlink config: %s", path)
+		}
+		file, err := os.Open(path)
+		if err != nil { return nil, err }
+		opened, statErr := file.Stat()
+		if statErr != nil { file.Close(); return nil, statErr }
+		if !os.SameFile(before, opened) {
+			file.Close()
+			return nil, fmt.Errorf("config changed during scan: %s", path)
+		}
+		if opened.Size() > maxConfigBytes {
+			file.Close()
 			return nil, fmt.Errorf("config %s exceeds %d bytes", path, maxConfigBytes)
 		}
-		data, err := os.ReadFile(path)
-		if err != nil { return nil, err }
+		totalBytes += opened.Size()
+		if totalBytes > maxTotalConfigBytes {
+			file.Close()
+			return nil, fmt.Errorf("total config input exceeds %d bytes", maxTotalConfigBytes)
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, maxConfigBytes+1))
+		closeErr := file.Close()
+		if readErr != nil { return nil, readErr }
+		if closeErr != nil { return nil, closeErr }
+		if len(data) > maxConfigBytes { return nil, fmt.Errorf("config %s exceeds %d bytes", path, maxConfigBytes) }
 		var root map[string]json.RawMessage
 		if err := json.Unmarshal(data, &root); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", path, err)
@@ -106,7 +145,7 @@ func Load(paths []string) ([]model.Server, error) {
 				Tools []map[string]any    `json:"tools"`
 				Transport string          `json:"transport"`
 			}
-			if err := json.Unmarshal(entry, &item); err != nil { continue }
+			if err := json.Unmarshal(entry, &item); err != nil { return nil, fmt.Errorf("parse server %q in %s: %w", name, path, err) }
 			servers = append(servers, model.Server{
 				Name: name, Config: path, Command: item.Command, Args: item.Args,
 				URL: item.URL, Env: item.Env, Tools: item.Tools, Transport: item.Transport,
