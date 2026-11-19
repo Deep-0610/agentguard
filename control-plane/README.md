@@ -6,7 +6,8 @@ This service is the first commercial control-plane slice: tenant-scoped scan ing
 
 - PostgreSQL-backed organizations, API keys, scan snapshots, identities, findings, finding history, and audit events.
 - Tenant identity is derived only from a validated API key; client-supplied tenant IDs are not trusted.
-- High-entropy API keys are shown once and stored as HMAC-SHA256 digests using a deployment pepper.\n- TOTP MFA is available per privileged API key; seeds are AES-GCM encrypted at rest, codes are replay-protected, and five failed attempts trigger a 15-minute lockout. API-key revocation requires a fresh TOTP code.
+- High-entropy API keys are shown once and stored as HMAC-SHA256 digests using a deployment pepper.
+- TOTP MFA is available per privileged API key; seeds are AES-GCM encrypted at rest, codes are replay-protected, and five failed attempts trigger a 15-minute lockout. API-key revocation requires a fresh TOTP code.
 - Roles: owner, admin, analyst, viewer, ingest. API routes use explicit role allowlists.
 - Bounded, strict-JSON scan ingestion with tenant-scoped idempotency.
 - Identity first-seen/last-seen tracking, drift history, credential-age metadata, risk-ranked inventory, and tenant-scoped identity relationships.
@@ -56,7 +57,10 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
 | GET | /v1/audit-events | owner, admin, analyst | Tenant audit history |
 | GET | /v1/api-keys | owner, admin | List key metadata; never secrets |
 | POST | /v1/api-keys | owner, admin | Create a scoped key; secret shown once |
-| GET | /v1/mfa/status | owner, admin | Check TOTP enrollment for the calling key |\n| POST | /v1/mfa/totp/enroll | owner, admin | Start TOTP enrollment; secret shown once |\n| POST | /v1/mfa/totp/verify | owner, admin | Verify and enable TOTP |\n| DELETE | /v1/api-keys/{id} | owner, admin + TOTP | Revoke an API key with step-up authentication |
+| GET | /v1/mfa/status | owner, admin | Check TOTP enrollment for the calling key |
+| POST | /v1/mfa/totp/enroll | owner, admin | Start TOTP enrollment; secret shown once |
+| POST | /v1/mfa/totp/verify | owner, admin | Verify and enable TOTP |
+| DELETE | /v1/api-keys/{id} | owner, admin + TOTP | Revoke an API key with step-up authentication |
 
 ### Example scan payload
 
