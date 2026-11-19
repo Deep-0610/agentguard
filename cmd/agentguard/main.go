@@ -59,6 +59,9 @@ func runScan(args []string) error {
 	if err != nil {
 		return err
 	}
+	if len(targets) == 0 {
+		return fmt.Errorf("no supported MCP configuration files found")
+	}
 	configs, err := discovery.Load(targets)
 	if err != nil {
 		return err
