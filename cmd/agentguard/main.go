@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/Deep-0610/agentguard/internal/discovery"
 	"github.com/Deep-0610/agentguard/internal/report"
@@ -72,8 +73,57 @@ func runScan(args []string) error {
 		return err
 	}
 	if *output != "" {
-		return os.WriteFile(*output, data, 0600)
+		return writeReport(*output, data, targets)
 	}
 	_, err = os.Stdout.Write(data)
 	return err
+}
+
+func writeReport(path string, data []byte, inputs []string) error {
+	outputPath, err := filepath.Abs(path)
+	if err != nil { return err }
+	outputPath = filepath.Clean(outputPath)
+	outputInfo, statErr := os.Lstat(outputPath)
+	if statErr == nil {
+		if outputInfo.Mode()&os.ModeSymlink != 0 || !outputInfo.Mode().IsRegular() {
+			return fmt.Errorf("refusing to write report to symlink or non-regular file: %s", outputPath)
+		}
+	} else if !os.IsNotExist(statErr) {
+		return statErr
+	}
+	for _, input := range inputs {
+		inputPath, err := filepath.Abs(input)
+		if err != nil { return err }
+		if filepath.Clean(inputPath) == outputPath {
+			return fmt.Errorf("report output must not overwrite scanned input: %s", outputPath)
+		}
+		if outputInfo != nil {
+			inputInfo, err := os.Stat(input)
+			if err == nil && os.SameFile(outputInfo, inputInfo) {
+				return fmt.Errorf("report output resolves to scanned input: %s", outputPath)
+			}
+		}
+	}
+	dir := filepath.Dir(outputPath)
+	temp, err := os.CreateTemp(dir, ".agentguard-report-*.tmp")
+	if err != nil { return err }
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0600); err != nil {
+		temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil { return err }
+	if err := os.Rename(tempPath, outputPath); err != nil {
+		return fmt.Errorf("atomically replace report %s: %w", outputPath, err)
+	}
+	return nil
 }
