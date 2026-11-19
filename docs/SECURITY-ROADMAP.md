@@ -56,6 +56,7 @@ Reference: [NIST SP 800-218](https://csrc.nist.gov/pubs/sp/800/218/final).
 - [ ] Implement OIDC with secure state, nonce, PKCE where applicable, and strict issuer/audience checks.
 - [x] Implement API-key role allowlists and deny-by-default OPA policy evaluation for the implemented API surface. User-level RBAC and OIDC are not implemented.
 - [x] Add per-tenant hash-chained audit events, verification, and database triggers blocking ordinary UPDATE/DELETE/TRUNCATE. External anchoring and protected export remain outstanding.
+- [x] Add reasoned, time-bounded finding suppression (maximum 90 days), explicit unsuppression, and audit records.
 - [ ] Add CSRF protections, secure cookies, rate limiting, request validation and security headers.
 - [ ] Define retention, deletion, backup, restore, and incident response procedures.
 - [ ] Run dependency, container, secret, and static analysis scans in CI. Go vulnerability scanning and vet run in CI; container, secret, and broader SAST scans remain outstanding.
