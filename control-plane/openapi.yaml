@@ -285,17 +285,11 @@ components:
           enum: [agent, mcp_server, oauth_app, service_principal, api_token, service_account, workload_identity, bot, unknown]
         name: { type: string, maxLength: 512 }
         owner_email: { type: string, maxLength: 320 }
-        owner_status:
-          type: string
-          enum: [ACTIVE, SUSPENDED, UNKNOWN]
         environment: { type: string, maxLength: 80 }
         scopes:
           type: array
           maxItems: 256
           items: { type: string }
-        verified: { type: boolean }
-        secret_age_days: { type: integer, minimum: 0 }
-        last_used_at: { type: string, format: date-time }
     Finding:
       type: object
       required: [fingerprint, severity, title]
