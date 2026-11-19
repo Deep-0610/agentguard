@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -125,6 +126,9 @@ func Load(paths []string) ([]model.Server, error) {
 		if len(data) > maxConfigBytes { return nil, fmt.Errorf("config %s exceeds %d bytes", path, maxConfigBytes) }
 		totalBytes += int64(len(data))
 		if totalBytes > maxTotalConfigBytes { return nil, fmt.Errorf("total config input exceeds %d bytes", maxTotalConfigBytes) }
+		if err := validateJSON(data); err != nil {
+			return nil, fmt.Errorf("validate %s: %w", path, err)
+		}
 		var root map[string]json.RawMessage
 		if err := json.Unmarshal(data, &root); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", path, err)
@@ -162,4 +166,56 @@ func unique(items []string) []string {
 		if item != "" && !seen[item] { seen[item] = true; out = append(out, item) }
 	}
 	return out
+}
+
+func validateJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var walk func(int) error
+	walk = func(depth int) error {
+		if depth > 128 {
+			return fmt.Errorf("JSON nesting exceeds 128 levels")
+		}
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		delim, ok := token.(json.Delim)
+		if !ok {
+			return nil
+		}
+		switch delim {
+		case '{':
+			seen := make(map[string]struct{})
+			for decoder.More() {
+				keyToken, err := decoder.Token()
+				if err != nil { return err }
+				key, ok := keyToken.(string)
+				if !ok { return fmt.Errorf("object key is not a string") }
+				if _, exists := seen[key]; exists {
+					return fmt.Errorf("duplicate JSON object key %q", key)
+				}
+				seen[key] = struct{}{}
+				if err := walk(depth + 1); err != nil { return err }
+			}
+			closing, err := decoder.Token()
+			if err != nil { return err }
+			if closing != json.Delim('}') { return fmt.Errorf("unterminated JSON object") }
+		case '[':
+			for decoder.More() {
+				if err := walk(depth + 1); err != nil { return err }
+			}
+			closing, err := decoder.Token()
+			if err != nil { return err }
+			if closing != json.Delim(']') { return fmt.Errorf("unterminated JSON array") }
+		default:
+			return fmt.Errorf("unexpected JSON delimiter %q", delim)
+		}
+		return nil
+	}
+	if err := walk(0); err != nil { return err }
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil { return fmt.Errorf("multiple JSON values in one config") }
+		return err
+	}
+	return nil
 }
