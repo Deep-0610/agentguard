@@ -15,7 +15,7 @@ This service is the first commercial control-plane slice: tenant-scoped scan ing
 - OPA/Rego policy evaluation for tenant-scoped inventory reads and MCP tool invocation decisions; unknown actions and schema drift are denied by default.
 - Finding status changes create finding-history and audit events. Owner/admins can also apply reasoned, time-bounded (maximum 90-day) suppressions, clear them with a reason, inspect triage history, and see active suppression state in finding lists and dashboard counts.
 - Audit events are hash-chained per tenant; database triggers reject UPDATE and DELETE.
-- Health endpoints, security headers, request IDs, and graceful shutdown.
+- Liveness and dependency-aware readiness endpoints, container health checks, security headers, request IDs, and graceful shutdown.
 
 ## Run locally
 
@@ -111,7 +111,7 @@ Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_liv
 
 A repeated scan ID with identical payload returns an idempotent duplicate result. Reusing the same scan ID with different content returns HTTP 409.
 
-## Security boundaries and limitations
+## Production deployment\n\nSee [the production deployment runbook](../docs/PRODUCTION-DEPLOYMENT.md) for verified-TLS configuration, secret handling, migration/bootstrap sequence, monitoring, backup/restore, and explicit general-availability release gates. Production mode requires PostgreSQL `sslmode=verify-full` and an HTTPS OPA endpoint. The bundled Compose stack is for local evaluation only.\n\n## Security boundaries and limitations
 
 - Deploy behind HTTPS; do not expose plaintext HTTP publicly.
 - Use a unique random API-key pepper and database password per deployment. Losing the pepper invalidates all API keys.
