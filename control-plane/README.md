@@ -24,7 +24,9 @@ Requires Docker Compose and Go 1.26+.
 ```bash
 cd control-plane
 cp .env.example .env
-# Replace both passwords with unique random values.
+# Generate URL-safe hex secrets (the Compose DSN uses POSTGRES_PASSWORD directly):
+openssl rand -hex 32
+# Use separate outputs for POSTGRES_PASSWORD and AG_API_KEY_PEPPER.
 set -a && . ./.env && set +a
 docker compose up -d postgres opa
 go mod tidy
