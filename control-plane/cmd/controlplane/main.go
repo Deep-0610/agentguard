@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 )
 
 func main() {
+	if len(os.Args)>1 && os.Args[1]=="healthcheck" { if err:=healthcheck(); err!=nil { log.Print(err); os.Exit(1) }; return }
 	if len(os.Args)>1 && os.Args[1]=="bootstrap" { if err:=bootstrap(os.Args[2:]); err!=nil { log.Fatal(err) }; return }
 	if len(os.Args)>1 && os.Args[1]=="migrate" { if err:=migrate(); err!=nil { log.Fatal(err) }; return }
 	if err:=serve(); err!=nil { log.Fatal(err) }
@@ -47,4 +49,16 @@ func serve() error {
 	stop:=make(chan os.Signal,1);signal.Notify(stop,syscall.SIGINT,syscall.SIGTERM)
 	select { case err:=<-errCh: if err==http.ErrServerClosed{return nil};return err; case <-stop: }
 	shutdownCtx,cancel:=context.WithTimeout(context.Background(),c.ShutdownTimeout);defer cancel();return server.Shutdown(shutdownCtx)
+}
+
+func healthcheck() error {
+	target:=os.Getenv("AG_HEALTHCHECK_URL")
+	if target=="" { target="http://127.0.0.1:8080/healthz" }
+	u,err:=url.Parse(target)
+	if err!=nil || (u.Scheme!="http" && u.Scheme!="https") || u.Host=="" { return fmt.Errorf("AG_HEALTHCHECK_URL must be an absolute HTTP(S) URL") }
+	ctx,cancel:=context.WithTimeout(context.Background(),2*time.Second);defer cancel()
+	req,err:=http.NewRequestWithContext(ctx,http.MethodGet,target,nil);if err!=nil{return err}
+	resp,err:=(&http.Client{Timeout:2*time.Second}).Do(req);if err!=nil{return fmt.Errorf("health check failed: %w",err)};defer resp.Body.Close()
+	if resp.StatusCode<200||resp.StatusCode>=300{return fmt.Errorf("health endpoint returned HTTP %d",resp.StatusCode)}
+	return nil
 }
