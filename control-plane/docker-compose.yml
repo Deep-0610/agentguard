@@ -26,6 +26,7 @@ services:
       AG_API_KEY_PEPPER: ${AG_API_KEY_PEPPER:?Set a random 32+ character pepper}
       AG_OPA_URL: http://opa:8181
       AG_LISTEN_ADDR: :8080
+      AG_HEALTHCHECK_URL: http://127.0.0.1:8080/healthz
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
@@ -33,6 +34,12 @@ services:
         condition: service_healthy
       opa:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "/controlplane", "healthcheck"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
     restart: unless-stopped
 volumes:
   agentguard-postgres:
