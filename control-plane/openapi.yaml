@@ -19,10 +19,10 @@ paths:
   /readyz:
     get:
       security: []
-      summary: Database readiness probe
+      summary: Database and OPA dependency readiness probe
       responses:
         "200":
-          description: Database is reachable
+          description: PostgreSQL and OPA are reachable
         "503":
           description: Database unavailable
   /v1/ingest/scans:
