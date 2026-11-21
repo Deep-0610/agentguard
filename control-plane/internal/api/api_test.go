@@ -129,3 +129,22 @@ func TestReadJSONRejectsExcessiveNesting(t *testing.T) {
 		t.Fatalf("expected excessive JSON nesting to be rejected, got %v",err)
 	}
 }
+
+func TestReadJSONRequiresExactJSONMediaType(t *testing.T) {
+	for _, contentType := range []string{"", "text/json", "application/jsonp", "application/json; charset=iso-8859-1"} {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"known":"ok"}`))
+		if contentType != "" { req.Header.Set("Content-Type", contentType) }
+		var dst map[string]any
+		if _, err := readJSON(httptest.NewRecorder(), req, &dst, 1024); err == nil {
+			t.Fatalf("expected content type %q to be rejected", contentType)
+		}
+	}
+}
+func TestReadJSONAcceptsUTF8JSONMediaType(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"known":"ok"}`))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	var dst map[string]any
+	if _, err := readJSON(httptest.NewRecorder(), req, &dst, 1024); err != nil {
+		t.Fatalf("expected UTF-8 JSON to be accepted: %v", err)
+	}
+}
