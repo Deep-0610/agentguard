@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"strconv"
@@ -262,7 +263,9 @@ func (a *API) revokeKey(w http.ResponseWriter,r *http.Request){
 }
 
 func readJSON(w http.ResponseWriter,r *http.Request,dst any,max int64)([]byte,error){
-	if r.Header.Get("Content-Type")!=""&&!strings.HasPrefix(r.Header.Get("Content-Type"),"application/json"){return nil,fmt.Errorf("Content-Type must be application/json")}
+	mediaType, params, mediaErr := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if mediaErr != nil || mediaType != "application/json" { return nil, fmt.Errorf("Content-Type must be application/json") }
+	if charset := params["charset"]; charset != "" && !strings.EqualFold(charset, "utf-8") { return nil, fmt.Errorf("JSON charset must be UTF-8") }
 	r.Body=http.MaxBytesReader(w,r.Body,max);defer r.Body.Close()
 	raw,err:=io.ReadAll(r.Body);if err!=nil{return nil,fmt.Errorf("request body is invalid or exceeds %d bytes",max)}
 	if err=validateJSONStructure(raw);err!=nil{return nil,fmt.Errorf("invalid JSON structure: %w",err)}
