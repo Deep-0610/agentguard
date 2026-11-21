@@ -9,5 +9,6 @@ WORKDIR /
 COPY --from=build /out/controlplane /controlplane
 EXPOSE 8080
 USER nonroot:nonroot
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["/controlplane", "healthcheck"]
 ENTRYPOINT ["/controlplane"]
 CMD ["serve"]
