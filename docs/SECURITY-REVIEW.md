@@ -18,7 +18,7 @@ Use this checklist as a release evidence tracker. An unchecked item is not compl
 ## Build and supply chain
 
 - [ ] Enforce formatting without mutating source during CI.
-- [ ] Run tests, race detector, vet, static analysis, and vulnerability scanning.
+- [ ] Run tests, race detector, vet, static analysis, and vulnerability scanning. Go tests, race detector, vet, and govulncheck are present in CI; broader static analysis and container scanning remain outstanding.
 - [ ] Generate an SBOM for each release.
 - [ ] Sign release artifacts and publish checksums.
 - [ ] Generate build provenance.
@@ -32,7 +32,7 @@ Use this checklist as a release evidence tracker. An unchecked item is not compl
 - [ ] Tenant isolation verified for every API and data-access path.
 - [ ] Cross-tenant access tests run automatically.
 - [ ] OIDC/SSO implementation independently reviewed.
-- [ ] MFA or step-up auth required for privileged actions.
+- [ ] MFA or step-up auth required for privileged actions. TOTP step-up currently protects API-key revocation; OIDC user-level MFA is not implemented.
 - [ ] RBAC and resource-level authorization tested deny-by-default.
 - [ ] Secrets encrypted with managed KMS-backed envelope encryption.
 - [ ] Sensitive values excluded from logs, traces, analytics, and error messages.
