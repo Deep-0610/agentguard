@@ -59,6 +59,13 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Build
         run: go build ./...
+      - name: Build production container image
+        run: docker build --pull -t agentguard-control-plane:ci .
+      - name: Validate Docker Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-only-postgres-password
+          AG_API_KEY_PEPPER: ci-only-test-pepper-please-replace-32-chars
+        run: docker compose config --quiet
       - name: Vulnerability scan
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
       - name: Database migration smoke test
