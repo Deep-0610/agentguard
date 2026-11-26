@@ -83,7 +83,7 @@ export async function POST(request) {
     });
     return response;
   } catch {
-    return NextResponse.json({ error: "Dashboard session encryption is not configured correctly." }, { status: 503 });
+    return NextResponse.json({ error: "Unable to establish a secure dashboard session. Check the control-plane connection and session-key configuration." }, { status: 503 });
   }
 }
 
