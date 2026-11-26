@@ -3,12 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
+	"context"
+	"time"
 	"os"
 	"path/filepath"
 
 	"github.com/Deep-0610/agentguard/internal/discovery"
 	"github.com/Deep-0610/agentguard/internal/report"
 	"github.com/Deep-0610/agentguard/internal/scanner"
+	"github.com/Deep-0610/agentguard/internal/syncer"
 )
 
 const version = "0.1.0"
@@ -26,6 +29,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "agentguard:", err)
 			os.Exit(1)
 		}
+	case "sync":
+		if err := runSync(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "agentguard:", err)
+			os.Exit(1)
+		}
 	default:
 		usage()
 		os.Exit(2)
@@ -34,8 +42,9 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "AgentGuard - local-first AI agent and MCP security scanner")
-	fmt.Fprintln(os.Stderr, "Usage: agentguard <scan|version>")
+	fmt.Fprintln(os.Stderr, "Usage: agentguard <scan|sync|version>")
 	fmt.Fprintln(os.Stderr, "  scan --path PATH | --discover [--format table|json|html|sarif] [--output FILE]")
+	fmt.Fprintln(os.Stderr, "  sync --url HTTPS_URL [--token API_KEY] --path PATH | --discover")
 }
 
 func runScan(args []string) error {
@@ -80,6 +89,30 @@ func runScan(args []string) error {
 	}
 	_, err = os.Stdout.Write(data)
 	return err
+}
+
+func runSync(args []string) error {
+	fs:=flag.NewFlagSet("sync",flag.ContinueOnError)
+	path:=fs.String("path","","file or directory to scan")
+	discover:=fs.Bool("discover",false,"scan common MCP configuration locations")
+	baseURL:=fs.String("url",os.Getenv("AGENTGUARD_CONTROL_PLANE_URL"),"AgentGuard control-plane base URL")
+	token:=fs.String("token",os.Getenv("AGENTGUARD_API_KEY"),"tenant-scoped ingestion API key")
+	if err:=fs.Parse(args);err!=nil{return err}
+	if (*path=="")==!*discover{return fmt.Errorf("choose exactly one of --path or --discover")}
+	if *baseURL==""{return fmt.Errorf("--url or AGENTGUARD_CONTROL_PLANE_URL is required")}
+	var targets []string
+	var err error
+	if *discover{targets,err=discovery.DefaultPaths()}else{targets,err=discovery.Expand(*path)}
+	if err!=nil{return err}
+	if len(targets)==0{return fmt.Errorf("no supported MCP configuration files found")}
+	configs,err:=discovery.Load(targets);if err!=nil{return err}
+	if len(configs)==0{return fmt.Errorf("no MCP server entries found in the supplied configuration files")}
+	findings:=scanner.Analyze(configs)
+	ctx,cancel:=context.WithTimeout(context.Background(),25*time.Second);defer cancel()
+	result,err:=syncer.Sync(ctx,*baseURL,*token,configs,findings,version)
+	if err!=nil{return err}
+	fmt.Printf("AgentGuard sync accepted: scan=%s assets=%d findings=%d duplicate=%t\n",result.ScanID,result.AssetsUpserted,result.FindingsUpserted,result.Duplicate)
+	return nil
 }
 
 func writeReport(path string, data []byte, inputs []string) error {

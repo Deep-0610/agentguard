@@ -1,0 +1,126 @@
+# AgentGuard Control Plane — Phase 2 foundation
+
+This service is the first commercial control-plane slice: tenant-scoped scan ingestion, NHI inventory, finding workflows, API-key administration, and append-only tamper-evident audit events.
+
+## Implemented in this slice
+
+- PostgreSQL-backed organizations, API keys, scan snapshots, identities, findings, finding history, and audit events.
+- Tenant identity is derived only from a validated API key; client-supplied tenant IDs are not trusted.
+- High-entropy API keys are shown once and stored as HMAC-SHA256 digests using a deployment pepper.
+- TOTP MFA is available per privileged API key; seeds are AES-GCM encrypted at rest, codes are replay-protected, and five failed attempts trigger a 15-minute lockout. API-key revocation requires a fresh TOTP code.
+- Roles: owner, admin, analyst, viewer, ingest. API routes use explicit role allowlists.
+- Bounded, strict-JSON scan ingestion with tenant-scoped idempotency.
+- Identity first-seen/last-seen tracking, drift history, credential-age metadata, risk-ranked inventory, and tenant-scoped identity relationships.
+- Server-side risk rules for privileged identities without active owners, toxic permission combinations, unverified OAuth applications, and stale API tokens.
+- OPA/Rego policy evaluation for tenant-scoped inventory reads and MCP tool invocation decisions; unknown actions and schema drift are denied by default.
+- Finding status changes create finding-history and audit events. Owner/admins can also apply reasoned, time-bounded (maximum 90-day) suppressions, clear them with a reason, inspect triage history, and see active suppression state in finding lists and dashboard counts.
+- Audit events are hash-chained per tenant; database triggers reject UPDATE and DELETE.
+- Liveness and dependency-aware readiness endpoints, container health checks, security headers, request IDs, and graceful shutdown.
+
+## Run locally
+
+Requires Docker Compose and Go 1.26+.
+
+```bash
+cd control-plane
+cp .env.example .env
+# Generate URL-safe hex secrets (the Compose DSN uses POSTGRES_PASSWORD directly):
+openssl rand -hex 32
+# Use separate outputs for POSTGRES_PASSWORD and AG_API_KEY_PEPPER.
+set -a && . ./.env && set +a
+docker compose up -d postgres opa
+go mod tidy
+go run ./cmd/controlplane migrate
+go run ./cmd/controlplane bootstrap --organization "Example Security"
+# Copy the one-time owner API key into a secret manager.
+export AG_OPA_URL=http://localhost:8181
+go run ./cmd/controlplane serve
+```
+
+The bootstrap command creates a tenant and initial owner key. Duplicate organization slugs are rejected. Never commit .env. After bootstrap, enroll TOTP on the owner key using `POST /v1/mfa/totp/enroll`, add the returned secret to an authenticator app, and confirm it with `POST /v1/mfa/totp/verify`. A key must have MFA enabled before it can revoke another key. Send the current six-digit code in `X-AgentGuard-TOTP` when calling `DELETE /v1/api-keys/{id}`.
+
+## API
+
+Except GET /healthz and GET /readyz, routes require Authorization: Bearer ag_live_<key-id>.<secret>.
+
+| Method | Route | Roles | Purpose |
+|---|---|---|---|
+| POST | /v1/ingest/scans | owner, admin, ingest | Ingest a scan snapshot |
+| POST | /v1/policies/evaluate | owner, admin, analyst | Evaluate against tenant-approved server-side tool baselines; unavailable policy service fails closed |
+| GET | /v1/tool-baselines | owner, admin, analyst, viewer | List approved tool schema baselines |
+| PUT | /v1/tool-baselines/{name} | owner, admin | Approve/update schema hash and risk classification |
+| GET | /v1/identities/{id}/events | owner, admin, analyst, viewer | Identity drift timeline |
+| GET | /v1/audit-events/verify | owner, admin | Verify tenant audit hash chain |
+| GET | /v1/dashboard/summary | owner, admin, analyst, viewer | Tenant KPI summary |
+| GET | /v1/identities | owner, admin, analyst, viewer | Risk-ranked identity inventory |
+| GET | /v1/relationships | owner, admin, analyst, viewer | Tenant-scoped identity graph edges |
+| GET | /v1/findings | owner, admin, analyst, viewer | Findings with optional status filter |
+| PATCH | /v1/findings/{id}/status | owner, admin, analyst | Update finding workflow status |
+| GET | /v1/findings/{id}/events | owner, admin, analyst, viewer | Finding triage history |
+| POST | /v1/findings/{id}/suppress | owner, admin | Temporarily suppress a finding with reason and expiry |
+| DELETE | /v1/findings/{id}/suppress | owner, admin | Clear a suppression with reason |
+| GET | /v1/audit-events | owner, admin, analyst | Tenant audit history |
+| GET | /v1/api-keys | owner, admin | List key metadata; never secrets |
+| POST | /v1/api-keys | owner, admin | Create a scoped key; secret shown once |
+| GET | /v1/mfa/status | owner, admin | Check TOTP enrollment for the calling key |
+| POST | /v1/mfa/totp/enroll | owner, admin | Start TOTP enrollment; secret shown once |
+| POST | /v1/mfa/totp/verify | owner, admin | Verify and enable TOTP |
+| DELETE | /v1/api-keys/{id} | owner, admin + TOTP | Revoke an API key with step-up authentication |
+
+### Example scan payload
+
+```json
+{
+  "scan_id": "ci-run-2026-11-19-001",
+  "source": "agentguard-cli",
+  "scanner_version": "0.1.0",
+  "collected_at": "2026-11-19T12:00:00Z",
+  "assets": [{
+    "external_id": "mcp:internal-docs",
+    "source": "mcp",
+    "kind": "mcp_server",
+    "name": "internal-docs",
+    "environment": "development",
+    "scopes": []
+  }, {
+    "external_id": "helper-app",
+    "source": "github",
+    "kind": "oauth_app",
+    "name": "helper-app"
+  }],
+  "relationships": [{
+    "from_source": "mcp",
+    "from_external_id": "internal-docs",
+    "to_source": "github",
+    "to_external_id": "helper-app",
+    "type": "uses"
+  }],
+  "findings": [{
+    "fingerprint": "stable-rule-and-resource-fingerprint",
+    "rule_id": "mcp.shell-launch",
+    "severity": "medium",
+    "confidence": "high",
+    "category": "execution-risk",
+    "title": "Shell-based MCP launch",
+    "description": "Review shell command construction.",
+    "resource": "internal-docs",
+    "location": "command",
+    "evidence": "shell executable: bash",
+    "remediation": "Prefer fixed executables and explicit arguments."
+  }]
+}
+```
+
+A repeated scan ID with identical payload returns an idempotent duplicate result. Reusing the same scan ID with different content returns HTTP 409.
+
+## Production deployment\n\nSee [the production deployment runbook](../docs/PRODUCTION-DEPLOYMENT.md) for verified-TLS configuration, secret handling, migration/bootstrap sequence, monitoring, backup/restore, and explicit general-availability release gates. Production mode requires PostgreSQL `sslmode=verify-full` and an HTTPS OPA endpoint. The bundled Compose stack is for local evaluation only.\n\n## Security boundaries and limitations
+
+- Deploy behind HTTPS; do not expose plaintext HTTP publicly.
+- Use a unique random API-key pepper and database password per deployment. Losing the pepper invalidates all API keys.
+- Restrict PostgreSQL network access and use TLS for external database connections.
+- API keys are an initial service/bootstrap mechanism, not a substitute for OIDC SSO, user sessions, per-user MFA, or SCIM. TOTP step-up currently protects API-key revocation only.
+- Audit hash chaining is tamper-evident, not cryptographic non-repudiation. A database superuser can alter data and recompute hashes; external immutable checkpoint anchoring is required for stronger assurance.
+- Provider connectors, OIDC user federation, user-level MFA/SCIM, runtime gateway enforcement, approval orchestration, and automated credential revocation are not implemented. A read-only early-access Next.js dashboard exists in `../dashboard`; it uses encrypted API-key sessions and is not a replacement for OIDC or per-user authorization. See [dashboard setup](../dashboard/README.md). OPA policy evaluation is implemented as an explicit API operation; it does not enforce tool calls at runtime.
+- Do not ingest raw credentials, access tokens, environment values, or customer secrets. Submit redacted evidence only.
+
+This is a development foundation for design-partner validation, not a general-availability security certification.

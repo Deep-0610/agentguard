@@ -1,0 +1,80 @@
+name: Control Plane CI
+
+on:
+  push:
+    branches: [main, "feature/**", "security/**"]
+    paths:
+      - "control-plane/**"
+      - ".github/workflows/control-plane.yml"
+  pull_request:
+    paths:
+      - "control-plane/**"
+      - ".github/workflows/control-plane.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-plane-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: agentguard
+          POSTGRES_PASSWORD: agentguard-ci-password
+          POSTGRES_DB: agentguard_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agentguard -d agentguard_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: control-plane
+    env:
+      AG_DATABASE_URL: postgres://agentguard:agentguard-ci-password@localhost:5432/agentguard_test?sslmode=disable
+      AG_API_KEY_PEPPER: ci-only-test-pepper-please-replace-32-chars
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.x"
+          cache: true
+          cache-dependency-path: control-plane/go.sum
+      - name: Normalize Go formatting before analysis
+        run: gofmt -w .
+      - name: Resolve dependencies
+        run: go mod tidy
+      - name: Verify dependency lockfile is unchanged
+        run: git diff --exit-code -- go.mod go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Unit and race tests
+        run: go test -race -count=1 ./...
+      - name: Build
+        run: go build ./...
+      - name: Build production container image
+        run: docker build --pull -t agentguard-control-plane:ci .
+      - name: Validate Docker Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-only-postgres-password
+          AG_API_KEY_PEPPER: ci-only-test-pepper-please-replace-32-chars
+        run: docker compose config --quiet
+      - name: Vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
+      - name: Database migration smoke test
+        run: go run ./cmd/controlplane migrate
+      - name: Validate OPA policy syntax and unit tests
+        run: |
+          docker run --rm -v "$PWD/policies:/policies:ro" openpolicyagent/opa:1.4.2 check /policies
+          docker run --rm -v "$PWD/policies:/policies:ro" openpolicyagent/opa:1.4.2 test /policies -v
