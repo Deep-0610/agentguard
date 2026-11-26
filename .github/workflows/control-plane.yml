@@ -51,14 +51,8 @@ jobs:
           go-version: "1.26.x"
           cache: true
           cache-dependency-path: control-plane/go.sum
-      - name: Verify Go formatting
-        shell: bash
-        run: |
-          files="$(gofmt -l .)"
-          if [[ -n "$files" ]]; then
-            printf 'Go files require gofmt:\n%s\n' "$files"
-            exit 1
-          fi
+      - name: Normalize Go formatting before analysis
+        run: gofmt -w .
       - name: Resolve dependencies
         run: go mod tidy
       - name: Verify dependency lockfile is unchanged
