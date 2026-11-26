@@ -73,7 +73,7 @@ go test -race ./...
 go build ./...
 ```
 
-CI checks formatting without modifying source, runs vet/race tests/fuzz targets, builds the Go projects, scans Go dependencies, validates the control-plane container and Compose configuration, smoke-tests migrations, and tests OPA policies. Passing CI is not a security certification.
+CI normalizes Go formatting in its temporary job workspace before vet/race tests and fuzz targets, builds the Go projects, scans Go dependencies, validates the control-plane container and Compose configuration, smoke-tests migrations, and tests OPA policies. A committed repository-wide formatting cleanup and a non-mutating formatting gate remain outstanding. Passing CI is not a security certification.
 
 ## Product and security documentation
 
