@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: control-plane-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -47,12 +51,18 @@ jobs:
           go-version: "1.26.x"
           cache: true
           cache-dependency-path: control-plane/go.sum
-      - name: Format Go sources
-        run: gofmt -w .
+      - name: Verify Go formatting
+        shell: bash
+        run: |
+          files="$(gofmt -l .)"
+          if [[ -n "$files" ]]; then
+            printf 'Go files require gofmt:\n%s\n' "$files"
+            exit 1
+          fi
       - name: Resolve dependencies
         run: go mod tidy
-      - name: Export dependency lockfile for repository pinning
-        run: base64 -w0 go.sum
+      - name: Verify dependency lockfile is unchanged
+        run: git diff --exit-code -- go.mod go.sum
       - name: Vet
         run: go vet ./...
       - name: Unit and race tests
