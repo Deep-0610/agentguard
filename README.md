@@ -61,6 +61,7 @@ go run ./cmd/agentguard scan --path . --format sarif --output agentguard.sarif
 - `internal/scanner`: heuristic checks, schema fingerprints, and risk scoring.
 - `internal/report`: table, JSON, HTML, and SARIF output.
 - `control-plane/`: Go API, PostgreSQL persistence, OPA policy evaluation, and tenant-scoped governance foundation.
+- `dashboard/`: Next.js early-access read-only control-plane UI; currently API-key-backed, not OIDC or GA. See [dashboard setup](dashboard/README.md).
 - `docs/`: architecture, threat model, security roadmap, deployment runbook, and commercial packaging.
 - Runtime gateway enforcement is planned and is not implemented.
 
