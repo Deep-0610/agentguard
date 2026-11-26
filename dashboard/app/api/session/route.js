@@ -78,9 +78,8 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  if (!sameOrigin(request)) return NextResponse.json({ error: "Cross-origin session requests are not allowed." }, { status: 403 });
   if (!sameOrigin(request)) return noStore(NextResponse.json({ error: "A same-origin request is required." }, { status: 403 }));
-  if (!/^application\\/json(?:\\s*;|$)/i.test(request.headers.get("content-type") || "")) {
+  if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get("content-type") || "")) {
     return noStore(NextResponse.json({ error: "Content-Type must be application/json." }, { status: 415 }));
   }
   let body;
@@ -129,7 +128,7 @@ export async function POST(request) {
 }
 
 export async function DELETE(request) {
-  if (!sameOrigin(request)) return NextResponse.json({ error: "Cross-origin session requests are not allowed." }, { status: 403 });
+  if (!sameOrigin(request)) return noStore(NextResponse.json({ error: "A same-origin request is required." }, { status: 403 }));
   const response = noStore(NextResponse.json({ authenticated: false }));
   response.cookies.set(COOKIE, "", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/api", maxAge: 0 });
   return response;
