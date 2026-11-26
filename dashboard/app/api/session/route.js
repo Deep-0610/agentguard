@@ -57,7 +57,22 @@ export async function POST(request) {
   if (!/^ag_live_[a-f0-9]{16}\.[A-Za-z0-9_-]{40,64}$/.test(token)) {
     return NextResponse.json({ error: "Enter a valid AgentGuard API key." }, { status: 400 });
   }
+  const controlPlane = process.env.AG_CONTROL_PLANE_URL;
+  if (!controlPlane) return NextResponse.json({ error: "Control plane URL is not configured." }, { status: 503 });
   try {
+    const origin = new URL(controlPlane);
+    if (process.env.NODE_ENV === "production" && origin.protocol !== "https:") throw new Error("HTTPS required");
+    const validationURL = new URL("/v1/dashboard/summary", origin);
+    const validation = await fetch(validationURL, {
+      headers: { Authorization: "Bearer " + token, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+      redirect: "error"
+    });
+    if (validation.status === 401 || validation.status === 403) {
+      return NextResponse.json({ error: "The API key is invalid or does not have dashboard access." }, { status: validation.status });
+    }
+    if (!validation.ok) return NextResponse.json({ error: "Control plane validation failed." }, { status: 502 });
     const response = NextResponse.json({ authenticated: true });
     response.cookies.set(COOKIE, encrypt(token), {
       httpOnly: true,
