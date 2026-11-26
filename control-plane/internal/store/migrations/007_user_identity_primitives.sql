@@ -14,8 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
  UNIQUE (issuer, subject)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS users_verified_email_idx
- ON users (lower(email)) WHERE email IS NOT NULL AND email_verified = TRUE AND disabled_at IS NULL;
+-- Email is an attribute, not a federated identity key; issuer + subject is authoritative.
 
 CREATE TABLE IF NOT EXISTS tenant_memberships (
  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
