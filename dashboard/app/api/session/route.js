@@ -1,0 +1,74 @@
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+const COOKIE = "ag_dashboard_session";
+const MAX_AGE = 8 * 60 * 60;
+
+function sessionKey() {
+  const encoded = process.env.AG_DASHBOARD_SESSION_KEY || "";
+  const key = Buffer.from(encoded, "base64");
+  if (key.length !== 32) throw new Error("AG_DASHBOARD_SESSION_KEY must be base64 for exactly 32 random bytes");
+  return key;
+}
+
+function encrypt(value) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", sessionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString("base64url");
+}
+
+function decrypt(value) {
+  const packed = Buffer.from(value, "base64url");
+  if (packed.length < 29 || packed.length > 1024) throw new Error("Invalid session");
+  const iv = packed.subarray(0, 12);
+  const tag = packed.subarray(12, 28);
+  const ciphertext = packed.subarray(28);
+  const decipher = createDecipheriv("aes-256-gcm", sessionKey(), iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+}
+
+export async function GET() {
+  const jar = await cookies();
+  const value = jar.get(COOKIE)?.value;
+  if (!value) return NextResponse.json({ authenticated: false });
+  try {
+    const token = decrypt(value);
+    return NextResponse.json({ authenticated: token.startsWith("ag_live_") });
+  } catch {
+    const response = NextResponse.json({ authenticated: false });
+    response.cookies.delete(COOKIE);
+    return response;
+  }
+}
+
+export async function POST(request) {
+  let body;
+  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+  const token = typeof body?.apiKey === "string" ? body.apiKey.trim() : "";
+  if (!/^ag_live_[a-f0-9]{16}\.[A-Za-z0-9_-]{40,64}$/.test(token)) {
+    return NextResponse.json({ error: "Enter a valid AgentGuard API key." }, { status: 400 });
+  }
+  try {
+    const response = NextResponse.json({ authenticated: true });
+    response.cookies.set(COOKIE, encrypt(token), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      path: "/api",
+      maxAge: MAX_AGE
+    });
+    return response;
+  } catch {
+    return NextResponse.json({ error: "Dashboard session encryption is not configured correctly." }, { status: 503 });
+  }
+}
+
+export async function DELETE() {
+  const response = NextResponse.json({ authenticated: false });
+  response.cookies.set(COOKIE, "", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/api", maxAge: 0 });
+  return response;
+}
