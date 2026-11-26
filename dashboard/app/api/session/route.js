@@ -13,6 +13,11 @@ function sessionKey() {
   return key;
 }
 
+function sameOrigin(request) {
+  const origin = request.headers.get("origin");
+  return !origin || origin === new URL(request.url).origin;
+}
+
 function encrypt(value) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", sessionKey(), iv);
@@ -23,12 +28,9 @@ function encrypt(value) {
 function decrypt(value) {
   const packed = Buffer.from(value, "base64url");
   if (packed.length < 29 || packed.length > 1024) throw new Error("Invalid session");
-  const iv = packed.subarray(0, 12);
-  const tag = packed.subarray(12, 28);
-  const ciphertext = packed.subarray(28);
-  const decipher = createDecipheriv("aes-256-gcm", sessionKey(), iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  const decipher = createDecipheriv("aes-256-gcm", sessionKey(), packed.subarray(0, 12));
+  decipher.setAuthTag(packed.subarray(12, 28));
+  return Buffer.concat([decipher.update(packed.subarray(28)), decipher.final()]).toString("utf8");
 }
 
 export async function GET() {
@@ -46,6 +48,9 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  if (!sameOrigin(request)) return NextResponse.json({ error: "Cross-origin session requests are not allowed." }, { status: 403 });
+  const length = Number(request.headers.get("content-length") || 0);
+  if (length > 1024) return NextResponse.json({ error: "Request is too large." }, { status: 413 });
   let body;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
   const token = typeof body?.apiKey === "string" ? body.apiKey.trim() : "";
@@ -67,7 +72,8 @@ export async function POST(request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request) {
+  if (!sameOrigin(request)) return NextResponse.json({ error: "Cross-origin session requests are not allowed." }, { status: 403 });
   const response = NextResponse.json({ authenticated: false });
   response.cookies.set(COOKIE, "", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/api", maxAge: 0 });
   return response;
