@@ -69,6 +69,7 @@ export async function POST(request) {
       signal: AbortSignal.timeout(5000),
       redirect: "error"
     });
+    await validation.body?.cancel();
     if (validation.status === 401 || validation.status === 403) {
       return NextResponse.json({ error: "The API key is invalid or does not have dashboard access." }, { status: validation.status });
     }
