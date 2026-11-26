@@ -120,7 +120,7 @@ A repeated scan ID with identical payload returns an idempotent duplicate result
 - Restrict PostgreSQL network access and use TLS for external database connections.
 - API keys are an initial service/bootstrap mechanism, not a substitute for OIDC SSO, user sessions, per-user MFA, or SCIM. TOTP step-up currently protects API-key revocation only.
 - Audit hash chaining is tamper-evident, not cryptographic non-repudiation. A database superuser can alter data and recompute hashes; external immutable checkpoint anchoring is required for stronger assurance.
-- Provider connectors, OIDC user federation, MFA/SCIM, runtime gateway enforcement, approval orchestration, automated credential revocation, and a browser dashboard are not implemented. OPA policy evaluation is implemented as an explicit API operation; it does not enforce tool calls at runtime.
+- Provider connectors, OIDC user federation, user-level MFA/SCIM, runtime gateway enforcement, approval orchestration, and automated credential revocation are not implemented. A read-only early-access Next.js dashboard exists in `../dashboard`; it uses encrypted API-key sessions and is not a replacement for OIDC or per-user authorization. See [dashboard setup](../dashboard/README.md). OPA policy evaluation is implemented as an explicit API operation; it does not enforce tool calls at runtime.
 - Do not ingest raw credentials, access tokens, environment values, or customer secrets. Submit redacted evidence only.
 
 This is a development foundation for design-partner validation, not a general-availability security certification.
