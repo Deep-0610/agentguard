@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 async function api(path) {
   const response = await fetch("/api/control-plane/" + path, { cache: "no-store" });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || "Request failed (" + response.status + ")");
+  if (response.status === 401) throw new Error("Authentication required.");
+  if (!response.ok) throw new Error((typeof body.error === "string" ? body.error : body.error?.message) || "Request failed (" + response.status + ")");
   return body;
 }
 
